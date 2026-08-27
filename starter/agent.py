@@ -6,6 +6,13 @@ import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from starter.constraint_reranker import CatalogReranker, Constraint, RerankConfig
+from starter.conversation_state import (
+    ConstraintSource,
+    ConversationState,
+)
+from starter.question_policy import QuestionPolicy
+
 
 TOKEN_RE = re.compile(r"[a-z0-9]+", re.IGNORECASE)
 STOPWORDS = {
@@ -14,11 +21,20 @@ STOPWORDS = {
     "that", "the", "this", "to", "want", "with", "would", "you", "looking",
 }
 
-QUESTION_MESSAGES = (
-    "What features or qualities matter most to you?",
-    "Is there anything else the product must have?",
-    "Are there any other preferences I should consider?",
-)
+
+@dataclass(frozen=True)
+class AgentConfig:
+    """Switches used for controlled component and combination ablations."""
+
+    question_policy: str = "always_other"
+    use_typed_state: bool = True
+    use_reranker: bool = True
+    candidate_pool_size: int = 100
+    rerank_config: RerankConfig = field(default_factory=RerankConfig)
+
+    def __post_init__(self) -> None:
+        if self.candidate_pool_size < 10:
+            raise ValueError("candidate_pool_size must be at least 10")
 
 
 @dataclass
@@ -30,6 +46,8 @@ class SessionState:
     query_terms: list[str] = field(default_factory=list)
     seen_terms: set[str] = field(default_factory=set)
     asked_attributes: list[str] = field(default_factory=list)
+    last_asked_attribute: str | None = None
+    structured: ConversationState | None = None
 
 
 def _text(value: object) -> str:
@@ -72,13 +90,24 @@ def _information_text(message: str) -> str:
 
 
 class Agent:
-    """Stateful BM25 agent with deterministic clarification and no LLM dependency."""
+    """Configurable offline shopping agent used for controlled ablations."""
 
-    def __init__(self, catalog_path: str | Path = "data/catalog.jsonl") -> None:
+    def __init__(
+        self,
+        catalog_path: str | Path = "data/catalog.jsonl",
+        config: AgentConfig | None = None,
+    ) -> None:
         self.catalog_path = Path(catalog_path)
+        self.config = config or AgentConfig()
         self.connection = sqlite3.connect(":memory:")
         self._sessions: dict[str, SessionState] = {}
+        self.question_policy = QuestionPolicy(self.config.question_policy)
         self._build_index()
+        self.reranker = (
+            CatalogReranker(self.catalog_path, config=self.config.rerank_config)
+            if self.config.use_reranker
+            else None
+        )
 
     def _build_index(self) -> None:
         cursor = self.connection.cursor()
@@ -110,9 +139,14 @@ class Agent:
         self.connection.commit()
 
     def reset(self, session_id: str, user_profile: dict) -> None:
-        # Retain the profile for later personalization work, but do not use it
-        # as a retrieval signal in this first state-and-clarification step.
-        self._sessions[session_id] = SessionState(user_profile=dict(user_profile))
+        self._sessions[session_id] = SessionState(
+            user_profile=dict(user_profile),
+            structured=(
+                ConversationState(user_profile)
+                if self.config.use_typed_state
+                else None
+            ),
+        )
 
     def respond(
         self,
@@ -125,31 +159,72 @@ class Agent:
             raise RuntimeError("reset must be called before respond")
         state = self._sessions[session_id]
         state.messages.append(user_message)
-        for term in _terms(_information_text(user_message)):
-            if term not in state.seen_terms:
-                state.seen_terms.add(term)
-                state.query_terms.append(term)
+        if state.structured is not None:
+            state.structured.observe(
+                user_message,
+                turn,
+                asked_attribute=state.last_asked_attribute,
+            )
+            query_terms = list(dict.fromkeys(_terms(state.structured.retrieval_text())))
+        else:
+            for term in _terms(_information_text(user_message)):
+                if term not in state.seen_terms:
+                    state.seen_terms.add(term)
+                    state.query_terms.append(term)
+            query_terms = state.query_terms
 
         # Search the accumulated conversation instead of forgetting earlier
         # requirements whenever a clarification response arrives.
-        expression = " OR ".join(f'"{term}"' for term in state.query_terms[:80])
+        expression = " OR ".join(f'"{term}"' for term in query_terms[:80])
         if not expression:
             recommendations: list[dict] = []
         else:
+            candidate_limit = (
+                self.config.candidate_pool_size
+                if self.reranker is not None
+                else top_k
+            )
             rows = self.connection.execute(
                 "SELECT parent_asin FROM products WHERE products MATCH ? "
                 "ORDER BY bm25(products, 0.0, 6.0, 4.0, 2.5, 2.5, 1.5, 1.0) LIMIT ?",
-                (expression, top_k),
+                (expression, candidate_limit),
             ).fetchall()
-            recommendations = [{"parent_asin": str(row[0])} for row in rows]
+            candidate_ids = [str(row[0]) for row in rows]
+            if self.reranker is not None and state.structured is not None:
+                constraints = [
+                    Constraint(
+                        record.attribute.value,
+                        record.value,
+                        hard=record.source
+                        in {
+                            ConstraintSource.INITIAL_CATEGORY,
+                            ConstraintSource.INITIAL_REQUIREMENT,
+                            ConstraintSource.OVERRIDE,
+                        },
+                    )
+                    for record in state.structured.active_constraints()
+                ]
+                recommendations = [
+                    candidate.recommendation()
+                    for candidate in self.reranker.rerank(
+                        candidate_ids,
+                        constraints,
+                        top_k=top_k,
+                    )
+                ]
+            else:
+                recommendations = [
+                    {"parent_asin": parent_asin}
+                    for parent_asin in candidate_ids[:top_k]
+                ]
 
-        question_index = min(len(state.asked_attributes), len(QUESTION_MESSAGES) - 1)
-        state.asked_attributes.append("other")
+        decision = self.question_policy.decide(state.asked_attributes)
+        if decision.ask_attribute is not None:
+            state.asked_attributes.append(decision.ask_attribute)
+        state.last_asked_attribute = decision.ask_attribute
         return {
-            "message": QUESTION_MESSAGES[question_index],
-            # The official simulator treats "other" as an open clarification
-            # channel and can disclose up to two remaining constraints.
-            "ask_attribute": "other",
+            "message": decision.message,
+            "ask_attribute": decision.ask_attribute,
             "recommendations": recommendations,
             "usage": {"prompt_tokens": 0, "completion_tokens": 0},
         }

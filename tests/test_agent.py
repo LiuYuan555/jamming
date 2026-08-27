@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from starter.agent import Agent
+from starter.agent import Agent, AgentConfig
 
 
 class StatefulAgentTest(unittest.TestCase):
@@ -36,7 +36,11 @@ class StatefulAgentTest(unittest.TestCase):
             "".join(json.dumps(product) + "\n" for product in products),
             encoding="utf-8",
         )
-        self.agent = Agent(self.catalog_path)
+        # Preserve the Step 1 path for focused state-accumulation tests.
+        self.agent = Agent(
+            self.catalog_path,
+            config=AgentConfig(use_typed_state=False, use_reranker=False),
+        )
         self.agent.reset("session", {"preference_tags": ["comfort"]})
 
     def tearDown(self) -> None:
@@ -73,6 +77,20 @@ class StatefulAgentTest(unittest.TestCase):
         )
 
         self.assertEqual(self.agent._sessions["session"].query_terms, before)
+
+    def test_default_configuration_uses_best_combination(self) -> None:
+        agent = Agent(self.catalog_path)
+        self.assertTrue(agent.config.use_typed_state)
+        self.assertTrue(agent.config.use_reranker)
+        self.assertEqual(agent.config.question_policy, "always_other")
+        self.assertEqual(agent.config.candidate_pool_size, 100)
+
+        agent.reset("best", {"preference_tags": ["comfort"]})
+        response = agent.respond(
+            "best", "I'm looking for Shoes, but I'm still exploring.", turn=1, top_k=10
+        )
+        self.assertIsNotNone(agent._sessions["best"].structured)
+        self.assertEqual(response["ask_attribute"], "other")
 
 
 if __name__ == "__main__":

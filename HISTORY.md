@@ -26,6 +26,7 @@ TechnicalScore = 0.50 × HitRate@10 + 0.30 × MRR + 0.20 × Efficiency
 |---|---|---:|---:|---:|---:|---:|---:|
 | Official baseline | Stateless weak BM25 | 0.125000 | 0.068034 | 9.810 | 0.1190 | 0.106710 | — |
 | Step 1 | Conversation state and open clarification | **0.860000** | **0.554147** | **3.575** | **0.7425** | **0.744744** | **+0.638034** |
+| Step 2 | Typed state, policy ablation, and constraint reranking | **0.970000** | **0.664567** | **2.535** | **0.8465** | **0.853670** | **+0.108926** |
 
 ## Official baseline — Stateless weak BM25
 
@@ -122,6 +123,169 @@ Most of the improvement comes from opening the clarification channel and retaini
 - The parser recognizes current simulator response markers, with a full-message fallback for unknown wording.
 - Constraints are accumulated as search terms rather than tracked as typed, active, rejected, or replaced values.
 - The next major experiment should add structured constraint state and explicit Intent Override handling, followed by a clean ablation against Step 1.
+
+## Step 2 — Typed state, policy ablation, and constraint reranking
+
+**Recorded:** 2026-08-27
+
+**Status:** Implemented, selected as the default, and locally validated
+
+### Hypothesis
+
+Step 1 proved that conversation state and clarification matter. The next experiment tested whether performance could improve further by:
+
+1. selecting a better fixed clarification policy;
+2. representing constraints as typed, auditable state;
+3. retrieving a wider BM25 pool and reranking it using exact constraint evidence.
+
+### Changes
+
+- Added configurable clarification policies: none, always `other`, always `feature`, always `material`, feature-first sequence, and other-first sequence.
+- Added typed constraint records with attribute, source, turn, status, and retraction metadata.
+- Added explicit no-preference tracking.
+- Added conservative parsing for Buying, Browsing, clarification, retry, Boundary, free-text, and Intent Override messages.
+- Added explicit override handling that retracts only the original superseded preference.
+- Widened BM25 retrieval from 10 to 100 candidates.
+- Added an offline constraint reranker using:
+  - attribute-specific catalog fields;
+  - normalized exact-phrase matching;
+  - token-overlap scoring;
+  - hard-miss and negation penalties;
+  - numeric budget handling;
+  - a BM25 retrieval-rank prior.
+- Added configurable component and weight switches for controlled ablations.
+- Added session tracing that reports target BM25 and reranked positions for failure analysis.
+- Kept the system on the Python standard library with no model, API, network, or token requirement.
+
+### Clarification-policy ablation
+
+The first experiment held Step 1 retrieval and state logic fixed and changed only the question policy.
+
+| Question policy | Hit Rate@10 | MRR | MTTC | TechnicalScore |
+|---|---:|---:|---:|---:|
+| None | 0.195 | 0.136575 | 9.285 | 0.172772 |
+| Always material | 0.515 | 0.354492 | 6.495 | 0.453948 |
+| Always feature | 0.565 | 0.363935 | 6.045 | 0.490781 |
+| Other-first sequence | 0.860 | 0.547063 | 3.670 | 0.740719 |
+| Always other | 0.860 | 0.554147 | **3.575** | 0.744744 |
+| Feature-first sequence | 0.860 | **0.576899** | 3.890 | **0.745270** |
+
+Feature-first won this isolated comparison by only `0.000526`. It improved MRR but required more turns. The difference was considered too small to trust without checking it in the full combination.
+
+### Component and combination ablation
+
+| Configuration | Hit Rate@10 | MRR | MTTC | TechnicalScore |
+|---|---:|---:|---:|---:|
+| Step 1: accumulated terms + always other | 0.860 | 0.554147 | 3.575 | 0.744744 |
+| Typed state + always other | 0.865 | 0.554438 | 3.530 | 0.748231 |
+| Typed state + feature-first | 0.865 | 0.561331 | 3.830 | 0.744299 |
+| Typed state + reranking + feature-first | 0.960 | 0.642472 | 2.845 | 0.835842 |
+| **Typed state + reranking + always other** | **0.970** | **0.664567** | **2.535** | **0.853670** |
+
+The best full combination was not the policy that narrowly won the isolated test. Always `other` combined better with the reranker because it supplied broad constraint coverage sooner.
+
+### Candidate-pool ablation
+
+| BM25 candidates reranked | Hit Rate@10 | MRR | MTTC | TechnicalScore |
+|---:|---:|---:|---:|---:|
+| 50 | 0.955 | 0.661873 | 2.670 | 0.842662 |
+| 75 | 0.965 | 0.665123 | 2.585 | 0.850337 |
+| **100** | **0.970** | **0.664567** | 2.535 | **0.853670** |
+| 125 | 0.970 | 0.662609 | 2.530 | 0.853183 |
+| 150 | 0.970 | 0.658409 | 2.525 | 0.852023 |
+| 200 | 0.970 | 0.657117 | **2.520** | 0.851735 |
+| 500 | 0.970 | 0.655734 | **2.520** | 0.851320 |
+
+Increasing the pool beyond 100 did not recover more sessions and slightly reduced MRR. Candidate pool 100 was selected from a reasonably flat region rather than from a sharp single-point gain.
+
+Additional reranker-weight tests varied exact-phrase, token-overlap, hard-miss, retrieval-rank, and rank-decay weights. None beat the default configuration.
+
+### Overall metrics
+
+| Metric | Step 1 | Step 2 best | Absolute change |
+|---|---:|---:|---:|
+| Hit Rate@10 | 0.860000 | **0.970000** | **+0.110000** |
+| MRR | 0.554147 | **0.664567** | **+0.110420** |
+| MTTC | 3.575 | **2.535** | **−1.040 turns** |
+| Efficiency | 0.7425 | **0.8465** | **+0.1040** |
+| TechnicalScore | 0.744744 | **0.853670** | **+0.108926** |
+
+Compared with the official baseline, the TechnicalScore is approximately **8.00 times** higher.
+
+### Per-scenario metrics
+
+| Scenario | Sessions | Hit Rate@10 | MRR | MTTC |
+|---|---:|---:|---:|---:|
+| Buying | 80 | 0.950000 | 0.617262 | 2.200 |
+| Browsing | 80 | 0.987500 | 0.631121 | 2.225 |
+| Intent Override | 30 | 0.966667 | 0.816984 | 4.033333 |
+| Boundary | 10 | 1.000000 | 0.853333 | 3.200 |
+
+### Validation and feasibility
+
+```text
+Tests: 32 passed
+Public sessions: 200
+Full evaluator wall time: 10.81 seconds
+Prompt tokens: 0
+Completion tokens: 0
+External dependencies: none
+Network requirement: none
+Evaluator modified: no
+Public labels modified: no
+```
+
+The normalized catalog used by the reranker adds approximately 110 MB of process memory in isolation and duplicates some metadata already stored by SQLite FTS5.
+
+### Remaining problems and concrete examples
+
+The best combination still misses 6 of 200 public sessions: 4 Buying, 1 Browsing, and 1 Intent Override.
+
+#### Problem 1: the target can fall outside the 100-candidate pool
+
+`public_0020` targets `B08P4SSFX4`, a novelty “Grandma” long-sleeve T-shirt. After all constraints were revealed, its BM25 rank was 284. The reranker only sees the first 100 candidates, so it could never recover the target. Its constraints—cotton, grey, a common fabric-composition statement, and Imported—also occur in many listings.
+
+This is a candidate-generation failure, not a Top-100 reranking failure. Increasing the global pool to 500 did not improve aggregate Hit Rate and reduced MRR, so a future solution needs better candidate generation rather than only a wider pool.
+
+#### Problem 2: generic constraints leave too many indistinguishable products
+
+`public_0083` targets `B0BPMCJ1RD`, a CHICZONE polyester button-down jacket. The final BM25 rank was 66, so the target reached the reranker, but it finished at reranked position 17. Constraints such as polyester, 100% Polyester, Imported, and Button closure match many products and do not identify the exact listing.
+
+Exact lexical reranking cannot reliably break ties when every disclosed constraint is generic. Stronger category modeling, product priors, or evidence beyond the four intent-card constraints may be required.
+
+#### Problem 3: semicolons inside a constraint are ambiguous
+
+The customer protocol separates multiple disclosed constraints using semicolons, but individual feature strings can also contain semicolons. In `public_0020`, one fabric-composition feature is split into several apparent constraints. The search terms survive, but the original exact phrase is lost, weakening phrase scoring.
+
+A robust parser needs a way to preserve catalog-derived feature boundaries without assuming every semicolon is a separator.
+
+#### Problem 4: semantically correct override handling can remove useful benchmark evidence
+
+`public_0144` targets `B08LMMDYV7`, an Urban Republic winter parka. Before the override, the target BM25 rank was 97. Correctly retracting the earlier `Zipper closure` preference moved it to rank 101, just outside the selected pool. The evaluator's target product does not change when intent is overridden, so the retracted preference can remain statistically diagnostic even though using it would be semantically questionable.
+
+This creates a benchmark-versus-product-behavior tension. Retaining a rejected preference may improve benchmark recall but would violate the customer's stated intent in a real shopping assistant.
+
+#### Problem 5: repeated `other` questions become useless after exhaustion
+
+After all hidden constraints have been disclosed, the current policy continues asking `other`. Failed sessions then receive the same no-preference response through turn 10. This does not add information and makes the conversation look repetitive.
+
+A candidate-aware policy should stop or switch strategy when `other` is marked as exhausted. However, the isolated fixed policies showed that switching too early can also reduce score, so this requires a controlled adaptive-policy experiment.
+
+### Example of the combination working as intended
+
+`public_0016` targets `B07PH3X7QK`, an Amazon Essentials combat boot. Initially the target was BM25 rank 206. After `other` revealed leather and Imported, it moved to rank 130. A second answer revealed Rubber sole and the distinctive phrase “Shaft measures approximately ankle-high from arch”; the target moved to BM25 rank 27 and reranked position 1 on turn 3.
+
+This is the ideal case for the selected architecture: clarification supplies distinctive metadata, BM25 retrieves a broad candidate set, and exact constraint reranking promotes the correct product.
+
+### Next experiment
+
+The next major change should focus on candidate-aware clarification and failure recovery rather than increasing the pool globally. Promising directions include:
+
+- switch questions only when the open channel is exhausted or low-value;
+- preserve semicolon-containing catalog feature boundaries;
+- add category-aware candidate generation;
+- detect low-information generic constraint sets and use a different tie-breaker;
+- evaluate whether a low-confidence fallback can search beyond the first 100 candidates without harming normal-session MRR.
 
 ## Template for future entries
 
