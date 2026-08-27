@@ -2,9 +2,24 @@ __pycache__/
 *.py[cod]
 .DS_Store
 .env
-results.json
-data/catalog.jsonl
-data/releases/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Downloaded catalog and release artifacts.
+/catalog.jsonl
+/catalog.jsonl.gz
+/SHA256SUMS
+/data/catalog.jsonl
+/data/releases/
+
+# Generated local-evaluation and experiment outputs. Durable metric summaries
+# belong in HISTORY.md rather than committing per-session result files.
+/results.json
+/*_results.json
+/artifacts/
+
 # Organizer-only code, private evaluation data, manifests, and build reports.
 organizer/
 secure/
