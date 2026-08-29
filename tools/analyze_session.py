@@ -13,17 +13,33 @@ from evaluator.local_evaluator import (
     load_jsonl,
     materialize_hidden_fields,
 )
-from starter.agent import Agent, AgentConfig, _terms
+from starter.agent import (
+    Agent,
+    AgentConfig,
+    CategoryRetrievalConfig,
+    _terms,
+)
 from starter.constraint_reranker import Constraint
 from starter.conversation_state import ConstraintSource
 
 
-def trace_sample(sample: dict, catalog_path: str, categories: dict, products: dict) -> dict:
+def trace_sample(
+    sample: dict,
+    catalog_path: str,
+    categories: dict,
+    products: dict,
+    *,
+    category_mode: str = "global",
+) -> dict:
     config = AgentConfig(
         question_policy="always_other",
         use_typed_state=True,
         use_reranker=True,
         candidate_pool_size=100,
+        category_retrieval=CategoryRetrievalConfig(
+            mode=category_mode,
+            trace_all_routes=category_mode != "global",
+        ),
     )
     agent = Agent(catalog_path, config=config)
     session_id = f"trace_{sample['sample_id']}"
@@ -73,14 +89,21 @@ def trace_sample(sample: dict, catalog_path: str, categories: dict, products: di
         reranked = agent.reranker.rerank(bm25_ids[:100], constraints, top_k=100)
         reranked_ids = [candidate.parent_asin for candidate in reranked]
         returned_ids = [item["parent_asin"] for item in response["recommendations"]]
+        retrieval_trace = agent._sessions[session_id].last_retrieval
+        category_ids = list(retrieval_trace.get("category", ()))
         turns.append({
             "turn": turn,
             "user_message": user_message,
+            "agent_message": response["message"],
             "active_constraints": [
                 f"{record.attribute.value}:{record.value}"
                 for record in state.active_constraints()
             ],
             "ask_attribute": response["ask_attribute"],
+            "target_category_rank_within_top_100": (
+                category_ids.index(target) + 1 if target in category_ids else None
+            ),
+            "category_pool_size": len(category_ids),
             "target_bm25_rank": bm25_ids.index(target) + 1 if target in bm25_ids else None,
             "target_rerank_rank_within_top_100": (
                 reranked_ids.index(target) + 1 if target in reranked_ids else None
@@ -124,6 +147,11 @@ def main() -> None:
     parser.add_argument("sample_ids", nargs="+")
     parser.add_argument("--catalog", default="data/catalog.jsonl")
     parser.add_argument("--dataset", default="data/public_set.jsonl")
+    parser.add_argument(
+        "--category-mode",
+        choices=("global", "category_only", "fused"),
+        default="global",
+    )
     args = parser.parse_args()
 
     samples = {sample["sample_id"]: sample for sample in load_jsonl(args.dataset)}
@@ -132,7 +160,13 @@ def main() -> None:
         if sample_id not in samples:
             raise SystemExit(f"unknown sample_id: {sample_id}")
         print(json.dumps(
-            trace_sample(samples[sample_id], args.catalog, categories, products),
+            trace_sample(
+                samples[sample_id],
+                args.catalog,
+                categories,
+                products,
+                category_mode=args.category_mode,
+            ),
             indent=2,
         ))
 
