@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shopping Copilot</title>
+<style>
+/* ---------------------------------------------------------------- tokens */
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --panel-2:#fbfbfd; --ink:#12151c; --ink-2:#4a5163;
+  --ink-3:#7c8496; --line:#e3e6ec; --line-2:#eef0f4; --accent:#4f46e5;
+  --accent-soft:#eef0fe; --good:#0f9960; --good-soft:#e7f6ef; --warn:#b7791f;
+  --bad:#c53030; --bad-soft:#fdeded;
+  --shadow:0 1px 2px rgba(16,20,32,.05),0 8px 24px -12px rgba(16,20,32,.14);
+  --radius:12px; --mono:ui-monospace,"SF Mono","Cascadia Code",Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme=light]){
+    --bg:#0c0e13; --panel:#14171f; --panel-2:#171b24; --ink:#e9ecf2; --ink-2:#a8b0c0;
+    --ink-3:#6f788b; --line:#242935; --line-2:#1d222c; --accent:#7c7cf5;
+    --accent-soft:#1e2038; --good:#34d399; --good-soft:#11291f; --warn:#e0a94a;
+    --bad:#f87171; --bad-soft:#2a1618;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme=dark]{
+  --bg:#0c0e13; --panel:#14171f; --panel-2:#171b24; --ink:#e9ecf2; --ink-2:#a8b0c0;
+  --ink-3:#6f788b; --line:#242935; --line-2:#1d222c; --accent:#7c7cf5;
+  --accent-soft:#1e2038; --good:#34d399; --good-soft:#11291f; --warn:#e0a94a;
+  --bad:#f87171; --bad-soft:#2a1618;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);
+  font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;cursor:pointer}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:8px;border:3px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--ink-3);background-clip:content-box}
+
+/* ---------------------------------------------------------------- shell */
+.app{display:flex;flex-direction:column;height:100vh}
+header.bar{
+  display:flex;align-items:center;gap:12px;padding:0 18px;height:56px;
+  border-bottom:1px solid var(--line);background:var(--panel);flex:none;
+}
+.brand{display:flex;align-items:center;gap:10px;font-weight:640;letter-spacing:-.01em}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--good);box-shadow:0 0 0 3px var(--good-soft)}
+.dot.busy{background:var(--warn);animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.sub{font-size:12px;color:var(--ink-3)}
+.spacer{flex:1}
+.btn{
+  border:1px solid var(--line);background:var(--panel-2);padding:7px 13px;
+  border-radius:9px;font-size:13px;font-weight:520;transition:.15s;
+}
+.btn:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.btn.icon{padding:7px 9px;line-height:1}
+
+main{display:grid;grid-template-columns:minmax(400px,1fr) minmax(400px,470px);flex:1;min-height:0}
+@media (max-width:960px){main{grid-template-columns:1fr;overflow:auto}}
+
+/* ---------------------------------------------------------------- chat */
+.chat{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+.stream{flex:1;overflow-y:auto;padding:22px 24px 8px;scroll-behavior:smooth}
+.turnmark{
+  display:flex;align-items:center;gap:10px;margin:18px 0 12px;
+  font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);font-weight:620;
+}
+.turnmark::after{content:"";flex:1;height:1px;background:var(--line-2)}
+.turnmark:first-child{margin-top:0}
+.msg{display:flex;margin-bottom:12px;animation:rise .28s cubic-bezier(.2,.7,.3,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.msg.user{justify-content:flex-end}
+.bubble{max-width:82%;padding:11px 14px;border-radius:14px;border:1px solid var(--line)}
+.msg.user .bubble{background:var(--accent);border-color:var(--accent);color:#fff;border-bottom-right-radius:5px}
+.msg.agent .bubble{background:var(--panel);border-bottom-left-radius:5px;box-shadow:var(--shadow)}
+.bubble .servedno{margin-top:7px;font-size:11.5px;color:var(--ink-3)}
+.empty{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  height:100%;text-align:center;color:var(--ink-3);gap:14px;padding:30px;
+}
+.empty h2{margin:0;font-size:16px;color:var(--ink-2);font-weight:600}
+.empty p{margin:0;max-width:330px;font-size:13px;line-height:1.6}
+
+/* ------------------------------------------------------------- composer */
+.composer{border-top:1px solid var(--line);background:var(--panel);padding:12px 24px 16px;flex:none}
+.presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.preset{
+  font-size:11.5px;padding:5px 10px;border-radius:8px;border:1px solid var(--line);
+  background:var(--panel-2);color:var(--ink-2);transition:.15s;
+}
+.preset:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.inputrow{display:flex;gap:9px;align-items:flex-end}
+textarea{
+  flex:1;resize:none;border:1px solid var(--line);border-radius:10px;padding:11px 13px;
+  background:var(--panel-2);color:var(--ink);font:inherit;max-height:140px;min-height:44px;
+  transition:.15s;outline:none;
+}
+textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);background:var(--panel)}
+.send{
+  border:none;background:var(--accent);color:#fff;padding:0 18px;height:44px;
+  border-radius:10px;font-weight:600;transition:.15s;
+}
+.send:disabled{opacity:.4;cursor:not-allowed}
+.send:not(:disabled):hover{filter:brightness(1.08)}
+
+/* ----------------------------------------------------------- right rail */
+.rail{display:flex;flex-direction:column;min-height:0;background:var(--panel-2)}
+.railhead{
+  display:flex;align-items:center;gap:10px;padding:11px 16px;flex:none;
+  border-bottom:1px solid var(--line);background:var(--panel-2);
+}
+.railtitle{font-size:14px;font-weight:640;letter-spacing:-.01em}
+.count{font-size:12px;color:var(--ink-3)}
+.tabs{display:flex;gap:2px;background:var(--line-2);padding:2px;border-radius:9px}
+.tab{
+  border:none;background:transparent;padding:5px 11px;border-radius:7px;
+  font-size:12px;font-weight:560;color:var(--ink-3);transition:.15s;
+}
+.tab.on{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+
+.railbody{flex:1;overflow-y:auto;min-height:0}
+.railbody.stale{opacity:.45;transition:opacity .18s}
+
+/* --------------------------------------------------------- product list */
+.plist{padding:6px 0}
+.prod{
+  display:flex;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line-2);
+  animation:rise .3s cubic-bezier(.2,.7,.3,1) both;transition:background .13s;
+}
+.prod:hover{background:var(--panel)}
+.prod:last-child{border-bottom:none}
+.pos{
+  font-family:var(--mono);font-size:11px;color:var(--ink-3);width:16px;flex:none;
+  text-align:right;padding-top:15px;font-variant-numeric:tabular-nums;
+}
+.thumb{width:52px;height:52px;border-radius:9px;flex:none;margin-top:2px}
+.pinfo{flex:1;min-width:0}
+.ptitle{
+  font-size:13px;line-height:1.42;font-weight:520;display:-webkit-box;
+  -webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.pmeta{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-top:5px;font-size:11.5px;color:var(--ink-3)}
+.price{color:var(--ink);font-weight:640;font-size:12.5px}
+.star{color:var(--warn)}
+.why{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px}
+.why b{
+  font-weight:520;font-size:10.5px;padding:2px 7px;border-radius:6px;
+  background:var(--good-soft);color:var(--good);display:inline-flex;gap:4px;align-items:center;
+}
+.delta{
+  font-size:10px;font-weight:660;padding:1px 6px;border-radius:5px;flex:none;
+  align-self:flex-start;margin-top:15px;font-family:var(--mono);
+}
+.delta.up{background:var(--good-soft);color:var(--good)}
+.delta.down{background:var(--bad-soft);color:var(--bad)}
+.delta.new{background:var(--accent-soft);color:var(--accent)}
+
+.nothing{padding:40px 20px;text-align:center;color:var(--ink-3);font-size:12.5px;line-height:1.6}
+
+/* ------------------------------------------------------------- details */
+.dets{padding:14px;display:flex;flex-direction:column;gap:12px}
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  overflow:hidden;flex:none;   /* <- without this, flex children compress and overlap */
+}
+.card > summary{
+  display:flex;align-items:center;gap:9px;padding:11px 13px;cursor:pointer;
+  list-style:none;user-select:none;transition:background .15s;
+}
+.card > summary::-webkit-details-marker{display:none}
+.card > summary:hover{background:var(--panel-2)}
+.caret{width:14px;height:14px;flex:none;color:var(--ink-3);transition:transform .2s}
+details[open] > summary .caret{transform:rotate(90deg)}
+.card .name{font-size:11px;letter-spacing:.07em;text-transform:uppercase;font-weight:660;color:var(--ink-2)}
+.card .badge{
+  margin-left:auto;font-size:10.5px;font-family:var(--mono);color:var(--ink-3);
+  background:var(--panel-2);border:1px solid var(--line);padding:2px 7px;border-radius:20px;
+}
+.card .body{padding:4px 13px 13px;border-top:1px solid var(--line-2)}
+.hint{font-size:11.5px;color:var(--ink-3);margin:9px 0 4px;line-height:1.5}
+
+.crow{display:flex;gap:9px;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--line-2)}
+.crow:last-child{border-bottom:none}
+.attr{
+  font-size:10px;font-family:var(--mono);padding:2px 6px;border-radius:5px;flex:none;
+  font-weight:600;min-width:62px;text-align:center;
+}
+.cval{flex:1;font-size:12.5px;word-break:break-word;line-height:1.45}
+.cmeta{font-size:10px;color:var(--ink-3);font-family:var(--mono);flex:none}
+.crow.gone .cval{text-decoration:line-through;color:var(--ink-3)}
+.crow.gone .attr{opacity:.4}
+
+.chiprow{display:flex;flex-wrap:wrap;gap:6px;padding-top:9px}
+.pchip{font-size:11px;padding:3px 9px;border-radius:20px;background:var(--panel-2);border:1px solid var(--line);font-family:var(--mono)}
+.pchip.muted{opacity:.42;text-decoration:line-through}
+
+.rrow{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line-2)}
+.rrow:last-child{border-bottom:none}
+.rname{font-size:12px;flex:none;width:112px;color:var(--ink-2)}
+.rbar{flex:1;height:5px;border-radius:4px;background:var(--line-2);overflow:hidden}
+.rbar i{display:block;height:100%;background:var(--accent);border-radius:4px;transition:width .35s cubic-bezier(.2,.7,.3,1)}
+.rcount{font-family:var(--mono);font-size:11px;color:var(--ink-3);width:32px;text-align:right;font-variant-numeric:tabular-nums}
+.rrow.off .rname,.rrow.off .rcount{opacity:.5}
+
+.trow{display:flex;align-items:center;gap:9px;padding:6px 0;font-size:12.5px}
+.led{width:7px;height:7px;border-radius:50%;flex:none;background:var(--ink-3);opacity:.35}
+.led.on{background:var(--good);opacity:1;box-shadow:0 0 0 3px var(--good-soft)}
+.trow .cmeta{margin-left:auto}
+
+.qtext{
+  font-family:var(--mono);font-size:11.5px;line-height:1.6;color:var(--ink-2);
+  background:var(--panel-2);border:1px solid var(--line-2);border-radius:8px;
+  padding:9px 11px;margin-top:9px;word-break:break-word;max-height:130px;overflow:auto;
+}
+.tree{font-family:var(--mono);font-size:11px;line-height:1.65;margin-top:8px}
+.tree .k{color:var(--ink-3)}
+.tree .v{color:var(--accent)}
+.tree .lvl{padding-left:12px;border-left:1px solid var(--line-2);margin-left:3px}
+.statline{
+  display:flex;gap:14px;padding:10px 13px;font-family:var(--mono);font-size:11px;
+  color:var(--ink-3);background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);flex:none;
+}
+.statline b{color:var(--ink);font-weight:620}
+.err{background:var(--bad-soft);color:var(--bad);border:1px solid var(--bad);
+     border-radius:9px;padding:10px 12px;font-size:12.5px;margin:12px 0}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="brand"><span class="dot" id="dot"></span> Shopping Copilot</div>
+    <span class="sub" id="sub"></span>
+    <div class="spacer"></div>
+    <button class="btn icon" id="theme" title="Toggle theme">◐</button>
+    <button class="btn" id="reset">New session</button>
+  </header>
+
+  <main>
+    <section class="chat">
+      <div class="stream" id="stream"></div>
+      <div class="composer">
+        <div class="presets" id="presets"></div>
+        <div class="inputrow">
+          <textarea id="input" rows="1" placeholder="Describe what you're shopping for…"></textarea>
+          <button class="send" id="send">Send</button>
+        </div>
+      </div>
+    </section>
+
+    <aside class="rail">
+      <div class="railhead">
+        <span class="railtitle">Recommendations</span>
+        <span class="count" id="count"></span>
+        <span class="spacer"></span>
+        <div class="tabs">
+          <button class="tab on" data-view="results">Results</button>
+          <button class="tab" data-view="details">Details</button>
+        </div>
+      </div>
+      <div class="railbody" id="rail"></div>
+    </aside>
+  </main>
+</div>
+
+<script>
+"use strict";
+
+const ATTR_HUE = {
+  category:250, material:170, color:280, size:38, style:340,
+  brand:205, budget:145, feature:220, use_case:25, other:0
+};
+const isDark = () => {
+  const t = document.documentElement.getAttribute("data-theme");
+  if (t === "dark") return true;
+  if (t === "light") return false;
+  return matchMedia("(prefers-color-scheme: dark)").matches;
+};
+const attrStyle = a => {
+  const h = ATTR_HUE[a];
+  if (h === undefined || h === 0)
+    return "background:var(--panel-2);color:var(--ink-2);border:1px solid var(--line)";
+  return isDark()
+    ? `background:hsl(${h} 40% 16%);color:hsl(${h} 70% 72%)`
+    : `background:hsl(${h} 82% 96%);color:hsl(${h} 62% 34%)`;
+};
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => (
+  {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const el = (tag, cls, html) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (html !== undefined) n.innerHTML = html;
+  return n;
+};
+
+function thumb(asin){
+  let h = 0;
+  for (let i = 0; i < asin.length; i++) h = (h * 31 + asin.charCodeAt(i)) >>> 0;
+  const a = h % 360, b = (a + 42) % 360, l = isDark() ? 26 : 88, l2 = isDark() ? 18 : 78;
+  return `background:linear-gradient(135deg,hsl(${a} 46% ${l}%),hsl(${b} 46% ${l2}%))`;
+}
+
+const S = {sid:null, meta:{}, busy:false, view:"results", sections:[], recs:[], turn:0, stats:null, entropy:[]};
+
+const api = async (path, body) => {
+  const r = await fetch(path, {
+    method: body ? "POST" : "GET",
+    headers:{"Content-Type":"application/json"},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const d = await r.json().catch(() => ({error:"bad response"}));
+  if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+  return d;
+};
+
+/* ------------------------------------------------------- results (customer) */
+function paintResults(){
+  const box = document.getElementById("rail");
+  box.innerHTML = "";
+  document.getElementById("count").textContent =
+    S.recs.length ? `${S.recs.length} items · turn ${S.turn}` : "";
+
+  if (!S.recs.length){
+    box.append(el("div","nothing",
+      "Nothing yet.<br>Tell the assistant what you're shopping for."));
+    return;
+  }
+  const list = el("div","plist");
+  S.recs.forEach((p,i) => {
+    const r = el("div","prod");
+    r.style.animationDelay = (i*22)+"ms";
+    r.append(el("span","pos",String(p.rank)));
+    const th = el("span","thumb"); th.setAttribute("style", thumb(p.parent_asin));
+    r.append(th);
+
+    const info = el("div","pinfo");
+    info.append(el("div","ptitle",esc(p.title)));
+    const meta = el("div","pmeta");
+    if (p.price != null) meta.append(el("span","price","$"+esc(p.price)));
+    if (p.store) meta.append(el("span",null,esc(p.store)));
+    if (p.rating != null)
+      meta.append(el("span",null,`<span class="star">★</span> ${esc(p.rating)}` +
+        (p.ratings ? ` <span style="opacity:.65">(${esc(p.ratings)})</span>` : "")));
+    info.append(meta);
+    if ((p.reasons||[]).length){
+      const why = el("div","why");
+      p.reasons.forEach(x => why.append(el("b",null,"✓ "+esc(x.value))));
+      info.append(why);
+    }
+    r.append(info);
+
+    if (p.isNew) r.append(el("span","delta new","NEW"));
+    else if (p.delta > 0) r.append(el("span","delta up","↑"+p.delta));
+    else if (p.delta < 0) r.append(el("span","delta down","↓"+(-p.delta)));
+    list.append(r);
+  });
+  box.append(list);
+}
+
+/* --------------------------------------------------------- details (dev) */
+const R = {};
+
+R.constraints = s => {
+  const box = el("div");
+  (s.rows||[]).forEach(row => {
+    const gone = row.status && row.status !== "active";
+    const r = el("div","crow"+(gone?" gone":""));
+    const a = el("span","attr",esc(row.attribute||"?"));
+    a.setAttribute("style", attrStyle(row.attribute));
+    r.append(a, el("span","cval",esc(row.value)));
+    r.append(el("span","cmeta", gone
+      ? `t${esc(row.turn)}→ret t${esc(row.retracted_turn ?? "?")}`
+      : `t${esc(row.turn)}`));
+    box.append(r);
+  });
+  return box;
+};
+
+R.chips = s => {
+  const box = el("div","chiprow");
+  (s.rows||[]).forEach(row => box.append(
+    el("span","pchip"+(row.muted?" muted":""),
+       `${esc(row.label)}<span style="opacity:.5"> t${esc(row.turn)}</span>`)));
+  return box;
+};
+
+R.routes = s => {
+  const box = el("div");
+  const max = Math.max(1, ...(s.rows||[]).map(r => r.count||0));
+  (s.rows||[]).forEach(row => {
+    const r = el("div","rrow"+(row.empty?" off":""));
+    r.append(el("span","rname",esc(row.label)));
+    const bar = el("span","rbar"), fill = el("i");
+    fill.style.width = ((row.count||0)/max*100)+"%";
+    bar.append(fill); r.append(bar, el("span","rcount",String(row.count ?? 0)));
+    box.append(r);
+  });
+  return box;
+};
+
+R.toggles = s => {
+  const box = el("div");
+  (s.rows||[]).forEach(row => {
+    const r = el("div","trow");
+    r.append(el("span","led"+(row.on?" on":"")), el("span",null,esc(row.label)),
+             el("span","cmeta",row.on?"on":"off"));
+    box.append(r);
+  });
+  return box;
+};
+
+R.text = s => el("div","qtext",esc(s.text));
+
+R.tree = s => {
+  const walk = obj => {
+    const box = el("div","lvl");
+    Object.entries(obj||{}).forEach(([k,v]) => {
+      if (v && typeof v === "object" && !Array.isArray(v)){
+        box.append(el("div",null,`<span class="k">${esc(k)}</span>`), walk(v));
+      } else {
+        const val = Array.isArray(v) ? `[${v.join(", ")}]` : String(v);
+        box.append(el("div",null,
+          `<span class="k">${esc(k)}</span> <span class="v">${esc(val)}</span>`));
+      }
+    });
+    return box;
+  };
+  const t = el("div","tree"); t.append(walk(s.rows)); return t;
+};
+
+R.entropy = s => {
+  const box = el("div");
+  const live = (s.rows||[]).filter(r => !r.masked);
+  const max = Math.max(0.0001, ...live.map(r => r.gain||0));
+  live.slice(0,6).forEach((row,i) => {
+    const r = el("div","rrow");
+    const name = el("span","rname", esc(row.attribute));
+    if (i === 0) name.style.color = "var(--accent)";
+    if (i === 0) name.style.fontWeight = "620";
+    r.append(name);
+    const bar = el("span","rbar"), fill = el("i");
+    fill.style.width = ((row.gain||0)/max*100)+"%";
+    if (i === 0) fill.style.background = "var(--good)";
+    bar.append(fill);
+    r.append(bar, el("span","rcount", (row.gain||0).toFixed(2)));
+    box.append(r);
+  });
+  const masked = (s.rows||[]).length - live.length;
+  if (masked > 0) box.append(el("div","hint", `${masked} attribute${masked===1?"":"s"} masked (already asked, refused, or zero coverage).`));
+  return box;
+};
+
+/* Unknown section kinds degrade to readable JSON instead of throwing. */
+R._fallback = s => el("div","qtext",esc(JSON.stringify(s.rows ?? s, null, 2)));
+
+function renderSection(s){
+  const d = el("details","card");
+  if (!s.collapsed) d.open = true;
+  const sum = el("summary");
+  sum.innerHTML =
+    `<svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"
+      stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
+     <span class="name">${esc(s.title)}</span>` +
+    (s.badge ? `<span class="badge">${esc(s.badge)}</span>` : "");
+  d.append(sum);
+  const body = el("div","body");
+  if (s.hint) body.append(el("div","hint",esc(s.hint)));
+  let node;
+  try { node = (R[s.kind] || R._fallback)(s); }
+  catch(e){ node = el("div","err","render error: "+esc(e.message)); }
+  body.append(node); d.append(body);
+  return d;
+}
+
+function paintDetails(){
+  const box = document.getElementById("rail");
+  box.innerHTML = "";
+  document.getElementById("count").textContent = "";
+  const wrap = el("div","dets");
+  if (S.stats){
+    let line = `<span>retrieval <b>${esc(S.stats.latency_ms)} ms</b></span>`;
+    if (S.stats.generate_ms) line += `<span>llm <b>${esc(S.stats.generate_ms)} ms</b></span>`;
+    line += `<span>tokens <b>${esc(S.stats.tokens)}</b></span>` +
+            `<span>turn <b>${esc(S.turn)}</b></span>`;
+    wrap.append(el("div","statline",line));
+  }
+  if (S.meta.llm){
+    wrap.append(el("div","statline",
+      `<span>model <b>${esc(S.meta.llm.model)}</b></span>` +
+      `<span>device <b>${esc(S.meta.llm.device)}</b></span>`));
+  }
+  if (S.meta.question_policy){
+    wrap.append(el("div","statline",
+      `<span>policy <b>${esc(S.meta.question_policy)}</b></span>` +
+      `<span>route <b>${esc(S.meta.mode)}</b></span>` +
+      `<span>pool <b>${esc(S.meta.pool)}</b></span>`));
+  }
+  if (S.entropy.length){
+    wrap.append(renderSection({
+      title:"Question selection", kind:"entropy", badge:"bits of gain",
+      hint:"Expected information gain per attribute over the current Top-10. The highest scoring unmasked attribute becomes ask_attribute.",
+      rows:S.entropy}));
+  }
+  if (!S.sections.length)
+    wrap.append(el("div","nothing","Send a message to populate diagnostics."));
+  S.sections.forEach(s => wrap.append(renderSection(s)));
+  box.append(wrap);
+}
+
+const paint = () => (S.view === "results" ? paintResults() : paintDetails());
+
+/* ----------------------------------------------------------------- chat */
+function addMsg(role, text, count, generated){
+  const stream = document.getElementById("stream");
+  if (stream.querySelector(".empty")) stream.innerHTML = "";
+  if (role === "user") stream.append(el("div","turnmark",`Turn ${S.turn+1}`));
+  const m = el("div","msg "+role), b = el("div","bubble");
+  b.append(el("div",null,esc(text)));
+  const foot = [];
+  if (count !== undefined && count > 0)
+    foot.push(`Showing ${count} match${count===1?"":"es"} →`);
+  if (generated) foot.push("generated locally");
+  if (foot.length) b.append(el("div","servedno",foot.join(" · ")));
+  m.append(b); stream.append(m);
+  stream.scrollTop = stream.scrollHeight;
+}
+
+function emptyState(){
+  document.getElementById("stream").innerHTML =
+    `<div class="empty">
+       <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+         <path d="M3 6h18M6 6l1.5 12h9L18 6M9 10v5M15 10v5"/></svg>
+       <h2>What are you shopping for?</h2>
+       <p>Describe it in your own words. The assistant asks follow-up questions
+          and narrows the results with every answer.</p>
+     </div>`;
+}
+
+async function newSession(){
+  S.sid = "ui-"+Date.now();
+  S.sections = []; S.recs = []; S.turn = 0; S.stats = null; S.entropy = [];
+  await api("/api/session",{session_id:S.sid,user_profile:{}});
+  emptyState(); paint();
+}
+
+async function send(){
+  const input = document.getElementById("input");
+  const text = input.value.trim();
+  if (!text || S.busy) return;
+  input.value = ""; input.style.height = "auto";
+  addMsg("user", text);
+  S.busy = true;
+  document.getElementById("dot").classList.add("busy");
+  document.getElementById("send").disabled = true;
+  document.getElementById("rail").classList.add("stale");
+  try{
+    const d = await api("/api/message",{session_id:S.sid,message:text});
+    S.turn = d.turn; S.sections = d.sections||[]; S.recs = d.recommendations||[];
+    S.entropy = d.entropy_scores||[];
+    S.stats = {latency_ms:d.latency_ms, generate_ms:d.generate_ms||0,
+      tokens:(d.usage?.prompt_tokens||0)+(d.usage?.completion_tokens||0)};
+    addMsg("agent", d.message || "Here are the closest matches I found.",
+           S.recs.length, d.generated);
+    paint();
+  }catch(e){
+    const stream = document.getElementById("stream");
+    stream.append(el("div","err","Request failed: "+esc(e.message)));
+    stream.scrollTop = stream.scrollHeight;
+  }finally{
+    S.busy = false;
+    document.getElementById("dot").classList.remove("busy");
+    document.getElementById("send").disabled = false;
+    document.getElementById("rail").classList.remove("stale");
+    input.focus();
+  }
+}
+
+/* ------------------------------------------------------------------ init */
+(async function(){
+  const saved = localStorage.getItem("copilot-theme");
+  if (saved) document.documentElement.setAttribute("data-theme", saved);
+
+  document.getElementById("theme").onclick = () => {
+    const next = isDark() ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try{ localStorage.setItem("copilot-theme", next); }catch{}
+    paint();
+  };
+  document.getElementById("reset").onclick = newSession;
+  document.getElementById("send").onclick = send;
+  document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+    document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === t));
+    S.view = t.dataset.view;
+    document.querySelector(".railtitle").textContent =
+      S.view === "results" ? "Recommendations" : "Session details";
+    paint();
+  });
+
+  const input = document.getElementById("input");
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }
+  });
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight,140)+"px";
+  });
+
+  // Startup takes ~45s with --llm (index -> catalog -> model -> entropy gate).
+  // Opening the page early is normal, so wait for the server rather than
+  // showing a dead "failed to fetch" that needs a manual reload.
+  async function waitForServer(){
+    const started = Date.now();
+    for (let attempt = 0; ; attempt++){
+      try { return await api("/api/meta"); }
+      catch(e){
+        if (Date.now() - started > 180000) throw e;
+        const secs = Math.round((Date.now()-started)/1000);
+        document.getElementById("stream").innerHTML =
+          `<div class="empty">
+             <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="1.5" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9">
+               <animateTransform attributeName="transform" type="rotate" from="0 12 12"
+                 to="360 12 12" dur="1s" repeatCount="indefinite"/></path></svg>
+             <h2>Starting the agent…</h2>
+             <p>Building the FTS5 index, loading 50,000 products, the local model
+                and the entropy gate. Takes about 80 seconds on a cold start. (${secs}s)</p>
+           </div>`;
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+  }
+
+  try{
+    S.meta = await waitForServer();
+    document.getElementById("sub").textContent =
+      `${(S.meta.catalog_size||0).toLocaleString()} products`;
+    const p = document.getElementById("presets");
+    (S.meta.presets||[]).forEach(preset => {
+      const b = el("button","preset",esc(preset.label));
+      b.onclick = () => {
+        input.value = preset.text;
+        input.dispatchEvent(new Event("input"));
+        input.focus();
+      };
+      p.append(b);
+    });
+    await newSession();
+    input.focus();
+  }catch(e){
+    document.getElementById("stream").innerHTML =
+      `<div class="err">Could not reach the agent server: ${esc(e.message)}</div>`;
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,408 @@
+<title>Shopping Copilot Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#f5f6f8; --surface:#ffffff; --surface-2:#eef1f4;
+  --ink:#101519; --ink-2:#5a6672; --ink-3:#8b96a1;
+  --rule:#dde2e7; --rule-2:#e9edf1;
+  --flow:#2c6ecb; --flow-soft:#e7eefb;
+  --kept:#1b8a5a; --kept-soft:#e4f3ec;
+  --cut:#c0553c;  --cut-soft:#fbeae6;
+  --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --cond:"IBM Plex Sans Condensed","IBM Plex Sans",-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0d1216; --surface:#151b21; --surface-2:#1b232a;
+    --ink:#e4e9ee; --ink-2:#94a2ae; --ink-3:#6a7783;
+    --rule:#242e36; --rule-2:#1e262d;
+    --flow:#6aa3f0; --flow-soft:#16243a;
+    --kept:#3fbb85; --kept-soft:#10291f;
+    --cut:#e2795e;  --cut-soft:#2b1712;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0d1216; --surface:#151b21; --surface-2:#1b232a;
+  --ink:#e4e9ee; --ink-2:#94a2ae; --ink-3:#6a7783;
+  --rule:#242e36; --rule-2:#1e262d;
+  --flow:#6aa3f0; --flow-soft:#16243a;
+  --kept:#3fbb85; --kept-soft:#10291f;
+  --cut:#e2795e;  --cut-soft:#2b1712;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);
+  font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px;margin:0 auto;padding:44px 28px 72px;display:flex;flex-direction:column;gap:40px}
+
+/* ---------------------------------------------------------------- header */
+header{display:flex;flex-direction:column;gap:14px;border-bottom:2px solid var(--ink);padding-bottom:22px}
+.eyebrow{
+  font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);
+}
+h1{
+  font-family:var(--cond);font-weight:700;font-size:clamp(30px,4.4vw,46px);
+  line-height:1.04;margin:0;letter-spacing:-.015em;text-wrap:balance;
+}
+.standfirst{margin:0;max-width:62ch;color:var(--ink-2);font-size:16px}
+.scoreline{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--rule);border-radius:8px;overflow:hidden;background:var(--surface)}
+.metric{flex:1 1 128px;padding:12px 16px;border-right:1px solid var(--rule)}
+.metric:last-child{border-right:none}
+.metric .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.metric .v{font-family:var(--mono);font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:2px}
+.metric .v.hero{color:var(--flow)}
+
+/* ----------------------------------------------------------------- figure */
+figure{margin:0;background:var(--surface);border:1px solid var(--rule);border-radius:10px;padding:26px 22px 18px}
+figure svg{display:block;width:100%;max-width:100%;height:auto}
+figcaption{
+  margin-top:16px;padding-top:14px;border-top:1px solid var(--rule-2);
+  color:var(--ink-2);font-size:13.5px;max-width:74ch;
+}
+.legend{display:flex;gap:20px;flex-wrap:wrap;margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+/* ------------------------------------------------------------------ misc */
+h2{
+  font-family:var(--cond);font-weight:600;font-size:23px;margin:0 0 4px;letter-spacing:-.01em;
+}
+section{display:flex;flex-direction:column;gap:16px}
+.lede{margin:0;color:var(--ink-2);max-width:70ch;font-size:14.5px}
+
+/* stage cards */
+.stages{display:grid;grid-template-columns:repeat(auto-fit,minmax(238px,1fr));gap:14px}
+.stage{
+  background:var(--surface);border:1px solid var(--rule);border-radius:9px;padding:15px 16px;
+  display:flex;flex-direction:column;gap:7px;
+}
+.stage.llm{border-color:var(--flow);box-shadow:inset 3px 0 0 var(--flow)}
+.stage .n{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);letter-spacing:.08em}
+.stage h3{font-family:var(--cond);font-weight:600;font-size:16.5px;margin:0}
+.stage p{margin:0;font-size:13.2px;color:var(--ink-2);line-height:1.5}
+.tech{font-family:var(--mono);font-size:11px;color:var(--flow);background:var(--flow-soft);
+      padding:3px 7px;border-radius:4px;align-self:flex-start}
+.ev{font-family:var(--mono);font-size:11.5px;color:var(--ink-2);border-top:1px dashed var(--rule);padding-top:7px;margin-top:auto}
+
+/* table */
+.tablewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:9px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:560px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--rule-2)}
+th{
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);font-weight:600;background:var(--surface-2);
+}
+tbody tr:last-child td{border-bottom:none}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.verdict{font-family:var(--mono);font-size:11px;padding:2px 8px;border-radius:20px;white-space:nowrap}
+.verdict.kept{background:var(--kept-soft);color:var(--kept)}
+.verdict.cut{background:var(--cut-soft);color:var(--cut)}
+.delta.neg{color:var(--cut)}
+.delta.pos{color:var(--kept)}
+
+/* code */
+pre{
+  margin:0;background:var(--surface);border:1px solid var(--rule);border-radius:9px;
+  padding:16px 18px;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.6;
+  color:var(--ink-2);
+}
+footer{border-top:1px solid var(--rule);padding-top:16px;color:var(--ink-3);font-size:12.5px;font-family:var(--mono)}
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">TikTok TechJam 2026 · Problem 4 · Conversational Shopping Copilot</div>
+  <h1>Finding one product in fifty thousand, in under three turns</h1>
+  <p class="standfirst">A multi-turn shopping agent over a frozen 50,000-product Amazon catalog. Every stage below was measured against the 200-session public set — including the four we built, measured, and then cut.</p>
+  <div class="scoreline">
+    <div class="metric"><div class="k">TechnicalScore</div><div class="v hero">0.8537</div></div>
+    <div class="metric"><div class="k">Hit Rate@10</div><div class="v">0.970</div></div>
+    <div class="metric"><div class="k">MRR</div><div class="v">0.665</div></div>
+    <div class="metric"><div class="k">Turns to hit</div><div class="v">2.54</div></div>
+    <div class="metric"><div class="k">vs. baseline</div><div class="v">8.0×</div></div>
+  </div>
+</header>
+
+<figure>
+  <svg viewBox="0 0 900 742" role="img" aria-label="Pipeline diagram: a customer message is parsed by regex templates, falling through to local LLM extraction when the phrasing is unrecognised; both feed a typed constraint state that accumulates and retracts; the state drives a BM25 sparse route and an LLM-rewritten MiniLM dense route in parallel; the two are fused by weighted reciprocal rank fusion, reranked on exact constraint evidence, and cut to a Top 10, which is returned alongside an LLM-written reply and an entropy-selected clarifying question.">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+      </marker>
+      <marker id="arf" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0 0 L10 5 L0 10 z" fill="var(--flow)"/>
+      </marker>
+    </defs>
+
+    <g font-family="IBM Plex Sans, sans-serif" font-size="13">
+
+      <!-- 1 message -->
+      <rect x="330" y="14" width="240" height="42" rx="6" fill="var(--surface-2)" stroke="currentColor" stroke-opacity=".3"/>
+      <text x="450" y="33" text-anchor="middle" font-weight="500">Customer message</text>
+      <text x="450" y="48" text-anchor="middle" font-size="11" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace">turn n</text>
+
+      <!-- to understanding -->
+      <line x1="450" y1="56" x2="450" y2="80" stroke="currentColor" stroke-opacity=".45" marker-end="url(#ar)"/>
+
+      <!-- 2 understanding: regex + llm -->
+      <rect x="150" y="82" width="250" height="62" rx="6" fill="var(--surface)" stroke="currentColor" stroke-opacity=".3"/>
+      <text x="275" y="104" text-anchor="middle" font-weight="500">Template parser</text>
+      <text x="275" y="121" text-anchor="middle" font-size="11" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace">regex · exact · 0 ms</text>
+      <text x="275" y="136" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">handles the benchmark's fixed phrasing</text>
+
+      <rect x="500" y="82" width="250" height="62" rx="6" fill="var(--flow-soft)" stroke="var(--flow)"/>
+      <text x="625" y="104" text-anchor="middle" font-weight="500" fill="var(--flow)">LLM extraction</text>
+      <text x="625" y="121" text-anchor="middle" font-size="11" fill="var(--flow)" font-family="IBM Plex Mono, monospace">Qwen2.5-1.5B · grounded</text>
+      <text x="625" y="136" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">handles everything a real shopper says</text>
+
+      <!-- fallthrough -->
+      <line x1="400" y1="113" x2="496" y2="113" stroke="var(--flow)" stroke-dasharray="4 3" marker-end="url(#arf)"/>
+      <text x="448" y="107" text-anchor="middle" font-size="10" fill="var(--flow)" font-family="IBM Plex Mono, monospace">falls through</text>
+
+      <!-- into state -->
+      <path d="M275 144 L275 168 L450 168" fill="none" stroke="currentColor" stroke-opacity=".45"/>
+      <path d="M625 144 L625 168 L450 168" fill="none" stroke="currentColor" stroke-opacity=".45"/>
+      <line x1="450" y1="168" x2="450" y2="190" stroke="currentColor" stroke-opacity=".45" marker-end="url(#ar)"/>
+
+      <!-- 3 typed state -->
+      <rect x="230" y="192" width="440" height="62" rx="6" fill="var(--surface)" stroke="currentColor" stroke-opacity=".55" stroke-width="1.5"/>
+      <text x="450" y="214" text-anchor="middle" font-weight="600">Typed constraint state</text>
+      <text x="450" y="231" text-anchor="middle" font-size="11" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace">attribute · value · source · turn · status</text>
+      <text x="450" y="246" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">accumulates every turn · retracts only the superseded preference</text>
+
+      <!-- split to two routes -->
+      <path d="M450 254 L450 272 L200 272 L200 292" fill="none" stroke="currentColor" stroke-opacity=".45" marker-end="url(#ar)"/>
+      <path d="M450 254 L450 272 L660 272 L660 292" fill="none" stroke="var(--flow)" marker-end="url(#arf)"/>
+      <text x="556" y="266" text-anchor="middle" font-size="10" fill="var(--flow)" font-family="IBM Plex Mono, monospace">+ profile preference_tags</text>
+
+      <!-- 4a sparse -->
+      <rect x="70" y="294" width="260" height="58" rx="6" fill="var(--surface)" stroke="currentColor" stroke-opacity=".3"/>
+      <text x="200" y="315" text-anchor="middle" font-weight="500">BM25 sparse retrieval</text>
+      <text x="200" y="332" text-anchor="middle" font-size="11" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace">SQLite FTS5 · weighted fields</text>
+      <text x="200" y="346" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">top 100 · exact evidence</text>
+
+      <!-- 4b rewrite -->
+      <rect x="530" y="294" width="260" height="58" rx="6" fill="var(--flow-soft)" stroke="var(--flow)"/>
+      <text x="660" y="315" text-anchor="middle" font-weight="500" fill="var(--flow)">LLM query rewrite</text>
+      <text x="660" y="332" text-anchor="middle" font-size="11" fill="var(--flow)" font-family="IBM Plex Mono, monospace">constraints + profile → keywords</text>
+      <text x="660" y="346" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">weak hints never override a requirement</text>
+
+      <line x1="660" y1="352" x2="660" y2="380" stroke="var(--flow)" marker-end="url(#arf)"/>
+
+      <!-- 4c dense -->
+      <rect x="530" y="382" width="260" height="58" rx="6" fill="var(--flow-soft)" stroke="var(--flow)"/>
+      <text x="660" y="403" text-anchor="middle" font-weight="500" fill="var(--flow)">Dense retrieval</text>
+      <text x="660" y="420" text-anchor="middle" font-size="11" fill="var(--flow)" font-family="IBM Plex Mono, monospace">MiniLM-L6-v2 · 50k × 384</text>
+      <text x="660" y="434" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">top 100 · offline, no API key</text>
+
+      <!-- fuse -->
+      <path d="M200 352 L200 470 L410 470" fill="none" stroke="currentColor" stroke-opacity=".45"/>
+      <path d="M660 440 L660 470 L490 470" fill="none" stroke="var(--flow)"/>
+      <rect x="330" y="472" width="240" height="46" rx="6" fill="var(--surface)" stroke="currentColor" stroke-opacity=".45"/>
+      <text x="450" y="492" text-anchor="middle" font-weight="500">Weighted RRF fusion</text>
+      <text x="450" y="508" text-anchor="middle" font-size="11" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace">0.85 sparse / 0.15 dense · k=60</text>
+
+      <line x1="450" y1="518" x2="450" y2="542" stroke="currentColor" stroke-opacity=".45" marker-end="url(#ar)"/>
+
+      <!-- rerank -->
+      <rect x="300" y="544" width="300" height="58" rx="6" fill="var(--surface)" stroke="currentColor" stroke-opacity=".55" stroke-width="1.5"/>
+      <text x="450" y="565" text-anchor="middle" font-weight="600">Constraint reranker</text>
+      <text x="450" y="582" text-anchor="middle" font-size="11" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace">exact phrase 7.0 · overlap 3.0 · miss −2.0</text>
+      <text x="450" y="596" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">scores each constraint against the fields it lives in</text>
+
+      <line x1="450" y1="602" x2="450" y2="626" stroke="currentColor" stroke-opacity=".45" marker-end="url(#ar)"/>
+
+      <!-- top 10 -->
+      <rect x="355" y="628" width="190" height="38" rx="6" fill="var(--surface-2)" stroke="currentColor" stroke-opacity=".45"/>
+      <text x="450" y="652" text-anchor="middle" font-weight="600">Top 10 products</text>
+
+      <!-- outputs -->
+      <path d="M450 666 L450 686 L235 686 L235 700" fill="none" stroke="var(--flow)" marker-end="url(#arf)"/>
+      <path d="M450 666 L450 686 L665 686 L665 700" fill="none" stroke="currentColor" stroke-opacity=".45" marker-end="url(#ar)"/>
+
+      <rect x="105" y="702" width="260" height="36" rx="6" fill="var(--flow-soft)" stroke="var(--flow)"/>
+      <text x="235" y="719" text-anchor="middle" font-size="12.5" font-weight="500" fill="var(--flow)">LLM reply to the customer</text>
+      <text x="235" y="732" text-anchor="middle" font-size="10" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace">grounded in stated constraints only</text>
+
+      <rect x="535" y="702" width="260" height="36" rx="6" fill="var(--surface)" stroke="currentColor" stroke-opacity=".3"/>
+      <text x="665" y="719" text-anchor="middle" font-size="12.5" font-weight="500">Clarifying question</text>
+      <text x="665" y="732" text-anchor="middle" font-size="10" fill="var(--ink-3)" font-family="IBM Plex Mono, monospace">Shannon entropy → ask_attribute</text>
+    </g>
+  </svg>
+
+  <div class="legend">
+    <span><i style="background:var(--flow-soft);border:1px solid var(--flow)"></i>local language model</span>
+    <span><i style="background:var(--surface);border:1px solid var(--rule)"></i>deterministic</span>
+    <span><i style="background:transparent;border-bottom:2px dashed var(--flow);border-radius:0;height:0;width:14px"></i>fallback path</span>
+  </div>
+
+  <figcaption>Every language-model stage sits on a deterministic path that still works without it. The parser owns the phrasings it recognises and hands the rest to the model; the dense route runs beside BM25 rather than replacing it; the reply is generated but the question is templated, because the question drives <code>ask_attribute</code> and the two must never disagree.</figcaption>
+</figure>
+
+<section>
+  <h2>The seven stages</h2>
+  <p class="lede">Blue stages run a local model. Every one is optional, and every one falls back to the deterministic path beneath it — the agent degrades in quality, never in function.</p>
+  <div class="stages">
+
+    <div class="stage">
+      <div class="n">STAGE 1</div>
+      <h3>Template parser</h3>
+      <p>Regex over the simulator's fixed phrasings. Exact, instant, and impossible to hallucinate — so it keeps priority over the model.</p>
+      <span class="tech">re · stdlib</span>
+      <div class="ev">Parses 100% of public-set turns</div>
+    </div>
+
+    <div class="stage llm">
+      <div class="n">STAGE 2</div>
+      <h3>LLM extraction</h3>
+      <p>Runs only when the parser falls through. Every extracted value must share a content word with the message, so the model can fail to help but cannot invent a requirement.</p>
+      <span class="tech">Qwen2.5-1.5B-Instruct</span>
+      <div class="ev">"black leather boots in size 9" → color, material, size</div>
+    </div>
+
+    <div class="stage">
+      <div class="n">STAGE 3</div>
+      <h3>Typed constraint state</h3>
+      <p>Each requirement becomes a record carrying attribute, value, source, turn and status. Provenance decides hardness; status makes retraction surgical rather than destructive.</p>
+      <span class="tech">dataclasses · enums</span>
+      <div class="ev">+0.105 with the reranker · +0.003 alone</div>
+    </div>
+
+    <div class="stage">
+      <div class="n">STAGE 4A</div>
+      <h3>BM25 sparse route</h3>
+      <p>Field-weighted full-text search. The customer quotes the product's own catalog text, so exact lexical evidence carries most of the signal.</p>
+      <span class="tech">SQLite FTS5</span>
+      <div class="ev">Target in top 100 for 199 / 200 sessions</div>
+    </div>
+
+    <div class="stage llm">
+      <div class="n">STAGE 4B</div>
+      <h3>Profile-aware rewrite</h3>
+      <p>Folds the anonymised profile's preference tags into the dense query as weak hints — never allowed to displace a stated requirement.</p>
+      <span class="tech">Qwen2.5-1.5B-Instruct</span>
+      <div class="ev">"basketball shorts polyester breathable"</div>
+    </div>
+
+    <div class="stage llm">
+      <div class="n">STAGE 4C</div>
+      <h3>Dense retrieval</h3>
+      <p>Cosine search over precomputed catalog vectors. Replaces the OpenAI embedding call entirely: no key, no network, 5 ms per query.</p>
+      <span class="tech">all-MiniLM-L6-v2 · 384d</span>
+      <div class="ev">50,000 vectors built in 60 s · 77 MB</div>
+    </div>
+
+    <div class="stage">
+      <div class="n">STAGE 5</div>
+      <h3>Constraint reranker</h3>
+      <p>Routes each typed constraint to the catalog fields where that attribute actually lives — material to features, brand to store — then rewards exact phrases over loose overlap.</p>
+      <span class="tech">offline · hand-weighted</span>
+      <div class="ev">0.748 → 0.854 when added</div>
+    </div>
+
+    <div class="stage llm">
+      <div class="n">STAGE 6</div>
+      <h3>Customer reply</h3>
+      <p>One sentence confirming what was understood. The model never sees the products — given them it recited IDs and invented colours, so it gets only the constraints.</p>
+      <span class="tech">Qwen2.5-1.5B-Instruct</span>
+      <div class="ev">~1 s/turn · rejects any reply naming an ASIN</div>
+    </div>
+
+    <div class="stage">
+      <div class="n">STAGE 7</div>
+      <h3>Question selection</h3>
+      <p>Expected information gain over the live candidate pool picks the next attribute to ask about, masking anything already asked or refused.</p>
+      <span class="tech">Shannon entropy</span>
+      <div class="ev">3.23 → 0.67 bits as the pool converges</div>
+    </div>
+
+  </div>
+</section>
+
+<section>
+  <h2>What we measured and cut</h2>
+  <p class="lede">Four components were built, evaluated over all 200 sessions, and removed from the scoring path. Reporting them is the point: each one is the obvious idea, and each one loses to the simpler system.</p>
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>Experiment</th><th>Why it should have worked</th><th class="num">Score</th><th class="num">Δ</th><th>Verdict</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Sparse baseline</td>
+          <td>Typed state, BM25, constraint reranking</td>
+          <td class="num">0.853670</td>
+          <td class="num">—</td>
+          <td><span class="verdict kept">shipped</span></td>
+        </tr>
+        <tr>
+          <td>LLM query rewriting</td>
+          <td>Cleaning the query helps retrieval — worth +0.088 on our other build</td>
+          <td class="num">0.837511</td>
+          <td class="num delta neg">−0.0162</td>
+          <td><span class="verdict cut">cut</span></td>
+        </tr>
+        <tr>
+          <td>Global dense fusion</td>
+          <td>Semantic recall should catch what lexical search misses</td>
+          <td class="num">0.852034</td>
+          <td class="num delta neg">−0.0016</td>
+          <td><span class="verdict cut">demo only</span></td>
+        </tr>
+        <tr>
+          <td>Entropy question policy</td>
+          <td>Ask the most informative attribute instead of a fixed one</td>
+          <td class="num">0.827465</td>
+          <td class="num delta neg">−0.0262</td>
+          <td><span class="verdict cut">demo only</span></td>
+        </tr>
+        <tr>
+          <td>Category-scoped retrieval</td>
+          <td>Restricting to the stated category should raise precision</td>
+          <td class="num">0.835434</td>
+          <td class="num delta neg">−0.0182</td>
+          <td><span class="verdict cut">cut</span></td>
+        </tr>
+        <tr>
+          <td>Learned question policy</td>
+          <td>A trained model should beat a fixed rule</td>
+          <td class="num">0.845883</td>
+          <td class="num delta neg">−0.0078</td>
+          <td><span class="verdict cut">cut</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="lede">The common cause: the benchmark's customer quotes the target product's own catalog metadata verbatim — <code>100% Polyester</code>, <code>Drawstring closure</code>. There is no semantic gap for embeddings to bridge and no conversational grammar for a rewriter to strip, so every "smarter" component trades exact evidence for paraphrase. We kept them behind flags because that reasoning inverts the moment a real shopper types in their own words.</p>
+</section>
+
+<section>
+  <h2>Flowchart source</h2>
+  <p class="lede">The same pipeline as Mermaid, for the README and slide tooling.</p>
+<pre>flowchart TD
+    M[Customer message, turn n] --&gt; P[Template parser<br/>regex, exact]
+    P -.falls through.-&gt; X[LLM extraction<br/>Qwen2.5-1.5B, grounded]
+    P --&gt; S[Typed constraint state<br/>attribute, value, source, turn, status]
+    X --&gt; S
+    S --&gt; B[BM25 sparse<br/>SQLite FTS5, top 100]
+    S --&gt; R[LLM query rewrite<br/>+ profile preference_tags]
+    R --&gt; D[Dense retrieval<br/>MiniLM-L6-v2, 50k x 384]
+    B --&gt; F[Weighted RRF<br/>0.85 sparse / 0.15 dense]
+    D --&gt; F
+    F --&gt; K[Constraint reranker<br/>exact phrase 7.0, miss -2.0]
+    K --&gt; T[Top 10 products]
+    T --&gt; A[LLM reply to customer]
+    T --&gt; Q[Clarifying question<br/>Shannon entropy to ask_attribute]</pre>
+</section>
+
+<footer>
+  Scored with the unmodified official evaluator over all 200 public sessions · no API keys · no network at inference · runs on CPU
+</footer>
+
+</div>
