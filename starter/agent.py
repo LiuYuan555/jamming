@@ -587,11 +587,14 @@ class Agent:
                     limit=candidate_limit,
                 )
             if self.reranker is not None and state.structured is not None:
+                rerank_constraints = list(constraints)
+                for tag in state.user_profile.get("preference_tags", []):
+                    rerank_constraints.append(Constraint(attribute="other", value=tag, hard=False, importance=0.1))
                 recommendations = [
                     candidate.recommendation()
                     for candidate in self.reranker.rerank(
                         candidate_ids,
-                        constraints,
+                        rerank_constraints,
                         top_k=top_k,
                     )
                 ]
@@ -614,3 +617,35 @@ class Agent:
                 "completion_tokens": completion_tokens,
             },
         }
+
+from starter.intent_hybrid_router import IntentConditionedHybridAgent
+
+class Agent(IntentConditionedHybridAgent):
+    def __init__(
+        self,
+        catalog_path="data/catalog.jsonl",
+        config=None,
+    ) -> None:
+        from starter.intent_classifier import IntentClassifier
+        from starter.agent import AgentConfig
+        
+        # Load Tool 6 (Intent Classifier)
+        try:
+            classifier = IntentClassifier.load("artifacts/techjam_intent_classifier.json")
+        except FileNotFoundError:
+            classifier = None
+            
+        super().__init__(
+            catalog_path=catalog_path,
+            config=AgentConfig(
+                question_policy="shannon_entropy", 
+                # We turn OFF the built-in OpenAI Hybrid Config entirely
+            ),
+            classifier=classifier,
+            use_entropy_gate=True,
+            use_intent_topk=True
+        )
+        
+        # Override the agent's semantic brain with our 100% offline HuggingFace Retriever!
+        from starter.hf_hybrid_retrieval import HFHybridRetriever
+        self.hybrid_retriever = HFHybridRetriever(top_k=100)
