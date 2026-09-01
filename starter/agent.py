@@ -587,11 +587,15 @@ class Agent:
                     limit=candidate_limit,
                 )
             if self.reranker is not None and state.structured is not None:
+                rerank_constraints = list(constraints)
+                for tag in state.user_profile.get("preference_tags", []):
+                    rerank_constraints.append(Constraint(attribute="other", value=tag, hard=False, importance=0.1))
+                    
                 recommendations = [
                     candidate.recommendation()
                     for candidate in self.reranker.rerank(
                         candidate_ids,
-                        constraints,
+                        rerank_constraints,
                         top_k=top_k,
                     )
                 ]
