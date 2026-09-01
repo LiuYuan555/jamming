@@ -5,46 +5,58 @@ evaluator never imports anything in this folder, and nothing here can change a
 score.
 
 ```bash
-python -m ui.server                      # auto-discovers catalog.jsonl
+python -m ui.server                       # deterministic, stdlib-only
 python -m ui.server --catalog PATH --port 8787
 ```
 
 Startup takes ~18s (FTS5 index build + reranker catalog + display index), then
-opens `http://127.0.0.1:8787/`. Standard library only — no pip install, no API
-key, no network. Press Enter to send, Shift+Enter for a newline.
+opens `http://127.0.0.1:8787/`. Press Enter to send, Shift+Enter for a newline.
 
-## Local response generation (optional)
+## LLM fall-through demo
 
 ```bash
-C:\Users\user\.venvs\techjam-ui\Scripts\python.exe -m ui.server --llm
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements-demo.txt
+.venv/bin/python -m ui.server --llm
 ```
 
-Generates the assistant's confirmation sentence with a local
-`Qwen/Qwen2.5-1.5B-Instruct` on the GPU. No API key, no network after the first
-model download, ~3.1GB VRAM at fp16.
+This switches the UI from `starter.agent.Agent` to `starter.llm_agent.LLMAgent`.
+One shared `Qwen/Qwen2.5-1.5B-Instruct` instance performs grounded constraint
+extraction when the parser sees non-template language and writes the concise
+customer confirmation. Add `--dense` after building MiniLM vectors to exercise
+profile-aware query rewriting too. No API key is required; the first start
+downloads about 3.1 GB of weights and later starts use the local cache.
 
-**This cannot change TechnicalScore.** The evaluator reads `ask_attribute` and
-discards `message`, so generation is a demo asset only — which is why it is
-opt-in and off by default. Leaving it on during a scoring run would add ~1-2s
-per turn for no benefit.
+Use the **LLM fall-through** preset, then open **Details**. The first panel shows
+whether the turn used `llm_fallthrough`, `deterministic_parser`, or
+`llm_rejected_parser_fallback`, together with calls, tokens, rejects, latency,
+typed constraints, rewritten query, and reply generation.
+
+**This does not own the reported TechnicalScore.** The official evaluator still
+instantiates the deterministic `starter.agent.Agent`.
 
 Responsibility is split three ways, deliberately:
 
 | Part of the reply | Produced by | Why |
 |---|---|---|
-| "You're looking for X with Y." | local LLM | phrasing is cosmetic, so a small model is safe here |
+| Free-text constraints | local LLM on parser fall-through | real shoppers do not follow simulator templates |
+| Dialogue action + customer reply | same local LLM, using the full transcript | can close a satisfied session; phrasing is bounded by typed state |
 | "What other preferences should I consider?" | agent template | drives `ask_attribute`; must match that field exactly |
 | ✓ evidence chips per product | exact catalog matching | instant, and cannot hallucinate an attribute |
 
 The model is never shown the product list. Given titles it invents attributes
 ("features a black color") and recites raw ASINs at the customer; given only the
-customer's own stated requirements it restates them accurately.
+customer’s own stated requirements it restates them accurately.
 
-Degradation ladder, in `ResponseGenerator._validate`: valid JSON → a clean bare
-sentence → the deterministic template. A reply containing a product code is
-rejected outright. Generation is skipped entirely when no constraints have been
-stated, because a small model asked to confirm an empty list invents
-requirements wholesale.
+The response stage also receives the complete short user/assistant transcript.
+It returns validated JSON with `action: continue|finish` plus one sentence. An
+explicit satisfaction cue forces `finish`, sets `ask_attribute` to `null`, and
+prevents the entropy gate from appending another question. This guard is kept in
+the optional demo layer, so it cannot change the official scored agent.
+
+Each LocalLLM task validates its output. Invalid JSON, ungrounded extracted
+values, excessive invented rewrite terms, or a reply containing an ASIN returns
+control to the deterministic parser/query/message.
 
 Measured on an RTX 5060 Laptop (8GB): **12.9 tok/s**, ~1-2s per turn at 10-25
 completion tokens. That throughput is only ~9% of the card's memory bandwidth —

@@ -50,7 +50,7 @@ from starter.conversation_state import (
 )
 from starter.hybrid_retrieval import weighted_rrf
 from starter.local_dense import LocalDenseRetriever
-from starter.local_llm import LocalLLM
+from starter.local_llm import LocalLLM, explicit_finish_intent
 
 
 def _flag(name: str, default: bool = True) -> bool:
@@ -74,16 +74,13 @@ EXTRACTABLE = frozenset({
 class LLMConversationState(ConversationState):
     """Typed state whose requirements are extracted by a language model.
 
-    The model reads every requirement-bearing message and returns typed
-    constraints grounded in the customer's own words. The regex parser remains
-    underneath as the fallback: it still classifies the dialogue act (so
-    retraction and refusal keep working deterministically), and its constraints
-    stand whenever the model returns nothing usable.
-
-    This ordering is deliberate. A template parser is perfect on the benchmark
-    and useless in deployment, where no customer phrases a requirement the same
-    way twice; putting the model first is what the architecture is *for*, and
-    the parser behind it is what stops that being a risk.
+    The structural parser always classifies the dialogue act first, so
+    retraction and refusal remain deterministic. By default, its constraints
+    stand for benchmark templates, while unmatched ``FREE_TEXT`` falls through
+    to grounded LLM extraction. An opt-in extraction-first mode sends all
+    requirement-bearing messages through the model. A model or validation
+    failure preserves the parser result; a valid empty extraction clears a
+    parser guess for greetings and non-shopping chatter.
     """
 
     def __init__(
@@ -108,7 +105,10 @@ class LLMConversationState(ConversationState):
             return update
 
         extracted = self.llm.extract(str(user_message))
-        if not extracted:
+        # ``None`` means the model failed validation and the parser must stand.
+        # An empty list is a successful extraction of *no requirement* (for
+        # example, "hello") and must clear the parser's free-text guess.
+        if extracted is None:
             self.llm_fallbacks += 1  # parser's constraints stand
             return update
 
@@ -142,6 +142,7 @@ class LLMAgent(Agent):
         *,
         use_llm: bool | None = None,
         use_dense: bool | None = None,
+        llm_model: str | None = None,
     ) -> None:
         super().__init__(catalog_path, config)
 
@@ -157,22 +158,29 @@ class LLMAgent(Agent):
         want_dense = _flag("TECHJAM_DENSE") if use_dense is None else use_dense
 
         self.llm: LocalLLM | None = None
+        self.llm_unavailable_reason: str | None = None
         if self.use_llm:
-            candidate = LocalLLM()
+            candidate = LocalLLM(model_name=llm_model) if llm_model else LocalLLM()
             self.llm = candidate if candidate.load() else None
             if self.llm is None:
+                self.llm_unavailable_reason = candidate.error
                 self.use_extract = self.use_rewrite = self.use_reply = False
 
         self.dense: LocalDenseRetriever | None = None
+        self.dense_unavailable_reason: str | None = None
         if want_dense:
             candidate = LocalDenseRetriever(top_k=self.config.candidate_pool_size)
             self.dense = candidate if candidate.available else None
+            if self.dense is None:
+                self.dense_unavailable_reason = candidate.unavailable_reason
 
         self.last_diagnostics: dict = {}
+        self._dialogue_history: dict[str, list[dict[str, str]]] = {}
 
     # ------------------------------------------------------------------ state
     def reset(self, session_id: str, user_profile: dict) -> None:
         super().reset(session_id, user_profile)
+        self._dialogue_history[session_id] = []
         state = self._sessions[session_id]
         if self.config.use_typed_state:
             state.structured = LLMConversationState(
@@ -193,6 +201,14 @@ class LLMAgent(Agent):
 
     # -------------------------------------------------------------- respond
     def respond(self, session_id: str, user_message: str, turn: int, top_k: int) -> dict:
+        usage_before = self.llm.usage() if self.llm is not None else {}
+        state_before = self._sessions.get(session_id)
+        extraction_count_before = getattr(
+            getattr(state_before, "structured", None), "llm_extractions", 0
+        )
+        fallback_count_before = getattr(
+            getattr(state_before, "structured", None), "llm_fallbacks", 0
+        )
         reply = super().respond(session_id, user_message, turn, top_k)
         state = self._sessions.get(session_id)
         if state is None or state.structured is None:
@@ -203,10 +219,20 @@ class LLMAgent(Agent):
             for record in state.structured.active_constraints()
         ]
         tags = self._profile_tags(state.user_profile)
+        extraction_count = getattr(state.structured, "llm_extractions", 0)
+        fallback_count = getattr(state.structured, "llm_fallbacks", 0)
         diagnostics: dict = {
             "constraints": active,
             "profile_tags": tags,
-            "llm_extractions": getattr(state.structured, "llm_extractions", 0),
+            "llm_extractions": extraction_count,
+            "llm_fallbacks": fallback_count,
+            "extraction_route": (
+                "llm_fallthrough"
+                if extraction_count > extraction_count_before
+                else "llm_rejected_parser_fallback"
+                if fallback_count > fallback_count_before
+                else "deterministic_parser"
+            ),
         }
 
         # ---- dense route, fused with the sparse pool the parent produced ----
@@ -252,22 +278,89 @@ class LLMAgent(Agent):
                         )
                     ]
 
-        # ---- customer-facing sentence ----
+        # ---- dialogue-aware customer response ----
         if self.use_reply and self.llm is not None:
-            sentence = self.llm.reply(active, len(reply.get("recommendations") or []))
-            if sentence:
-                question = reply.get("message") or ""
-                # The question stays templated: it drives ask_attribute, and the
-                # two must never disagree.
-                reply["message"] = f"{sentence} {question}".strip()
+            history = list(self._dialogue_history.get(session_id, ()))
+            history.append({"role": "user", "content": str(user_message)})
+            required_action = (
+                "finish" if explicit_finish_intent(user_message) else None
+            )
+            plan = self.llm.reply(
+                active,
+                len(reply.get("recommendations") or []),
+                conversation=history,
+                proposed_question=(
+                    None
+                    if required_action == "finish"
+                    else str(reply.get("message") or "") or None
+                ),
+                required_action=required_action,
+            )
+            if plan and plan["action"] == "finish" and required_action != "finish":
+                # A generative model may not terminate a session without an
+                # explicit high-precision cue in the latest customer turn.
+                diagnostics["model_finish_rejected"] = True
+                plan = None
+            if required_action == "finish" and not plan:
+                # Protocol-safe fallback: an explicit terminal cue must never
+                # be followed by another sales question just because generation
+                # or JSON validation failed.
+                plan = {
+                    "action": "finish",
+                    "reply": "Glad I could help—enjoy your selection!",
+                }
+                diagnostics["reply_fallback"] = "explicit_finish"
+            if plan:
+                sentence = plan["reply"]
+                action = plan["action"]
+                diagnostics["dialogue_action"] = action
                 diagnostics["generated_reply"] = True
+                if action == "finish":
+                    # The base agent selected a question before the dialogue
+                    # controller ran. Remove that unshown action so a later
+                    # resumed turn does not inherit false question history.
+                    selected = reply.get("ask_attribute")
+                    if selected and state.asked_attributes:
+                        state.asked_attributes.pop()
+                    state.last_asked_attribute = (
+                        state.asked_attributes[-1] if state.asked_attributes else None
+                    )
+                    reply["message"] = sentence
+                    reply["ask_attribute"] = None
+                    diagnostics["conversation_complete"] = True
+                else:
+                    question = reply.get("message") or ""
+                    # The protocol question stays deterministic and therefore
+                    # cannot disagree with ask_attribute.
+                    reply["message"] = f"{sentence} {question}".strip()
+                    diagnostics["customer_confirmation"] = sentence
+                    diagnostics["conversation_complete"] = False
+
+        final_message = str(reply.get("message") or "")
+        dialogue = self._dialogue_history.setdefault(session_id, [])
+        dialogue.append({"role": "user", "content": str(user_message)})
+        if final_message:
+            dialogue.append({"role": "assistant", "content": final_message})
 
         if self.llm is not None:
-            usage = self.llm.usage()
+            usage_after = self.llm.usage()
             reply["usage"] = {
-                "prompt_tokens": usage["prompt_tokens"],
-                "completion_tokens": usage["completion_tokens"],
+                "prompt_tokens": usage_after["prompt_tokens"]
+                - int(usage_before.get("prompt_tokens", 0)),
+                "completion_tokens": usage_after["completion_tokens"]
+                - int(usage_before.get("completion_tokens", 0)),
             }
+            diagnostics["llm_calls"] = usage_after["calls"] - int(
+                usage_before.get("calls", 0)
+            )
+            diagnostics["llm_rejects"] = usage_after["rejects"] - int(
+                usage_before.get("rejects", 0)
+            )
+            diagnostics["llm_generate_ms"] = round(
+                usage_after["generate_ms"]
+                - float(usage_before.get("generate_ms", 0.0)),
+                1,
+            )
         self.last_diagnostics = diagnostics
         return reply
 

@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TechJam 2026 Track 4 — Conversational Shopping Copilot</title>
+  <style>
+    :root {
+      --navy:#081426; --navy2:#10243d; --paper:#f6f3eb; --white:#fff;
+      --ink:#101b2b; --muted:#617083; --line:#d8dee6; --blue:#2673ff;
+      --cyan:#16b6cf; --mint:#22b573; --amber:#f4a62a; --red:#e45b52;
+      --violet:#7557d9; --soft-blue:#eaf1ff; --soft-mint:#e7f7ef;
+      --soft-amber:#fff2d9; --soft-red:#fdebea; --shadow:0 18px 60px rgba(4,18,38,.18);
+      --sans:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+      --mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:#dce2e9;color:var(--ink);font-family:var(--sans)}
+    body{overflow:hidden}
+    button{font:inherit}
+    .deck{position:relative;width:100vw;height:100vh;display:grid;place-items:center;padding:24px 24px 78px}
+    .slide{
+      display:none;position:relative;width:1600px;height:900px;overflow:hidden;background:var(--paper);
+      box-shadow:var(--shadow);transform-origin:center center;isolation:isolate;
+    }
+    .slide.active{display:block}
+    .slide.dark{background:var(--navy);color:#f7fbff}
+    .slide::after{content:"";position:absolute;right:-160px;top:-190px;width:520px;height:520px;border-radius:50%;border:1px solid rgba(38,115,255,.16);z-index:-1}
+    .slide.dark::after{border-color:rgba(85,174,255,.16)}
+    .inner{height:100%;padding:66px 78px 56px;display:flex;flex-direction:column}
+    .topline{display:flex;align-items:center;gap:16px;font:700 16px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--blue)}
+    .topline::before{content:"";width:30px;height:4px;background:currentColor;border-radius:9px}
+    .dark .topline{color:#65c8ff}
+    h1,h2,h3,p{margin-top:0}
+    h1{font-size:78px;line-height:.98;letter-spacing:-.045em;margin:28px 0 25px;max-width:1200px}
+    h2{font-size:53px;line-height:1.02;letter-spacing:-.035em;margin:18px 0 30px;max-width:1250px}
+    h3{font-size:25px;line-height:1.18;letter-spacing:-.018em;margin-bottom:12px}
+    p{font-size:22px;line-height:1.45;color:var(--muted)}
+    .dark p{color:#b8c9dc}
+    .lead{font-size:29px;line-height:1.38;max-width:1100px}
+    .kicker{font:700 18px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:#65c8ff}
+    .mono{font-family:var(--mono)}
+    .tiny{font-size:15px;line-height:1.4}
+    .small{font-size:18px;line-height:1.38}
+    .strong{font-weight:800;color:var(--ink)}
+    .dark .strong{color:#fff}
+    .accent{color:var(--blue)} .green{color:var(--mint)} .amber{color:var(--amber)} .red{color:var(--red)}
+    .tag{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:8px 13px;font:700 14px/1 var(--mono);background:#fff;color:var(--ink)}
+    .dark .tag{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.15);color:#dceaff}
+    .chip{display:inline-block;padding:6px 10px;border-radius:7px;background:var(--soft-blue);color:#165fd5;font:700 14px/1.15 var(--mono)}
+    .rule{height:1px;background:var(--line);margin:20px 0}
+    .dark .rule{background:rgba(255,255,255,.13)}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:26px;min-height:0;flex:1}
+    .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;min-height:0}
+    .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;min-height:0}
+    .card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:25px 26px;position:relative}
+    .dark .card{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.13)}
+    .card p:last-child{margin-bottom:0}
+    .card.blue{background:var(--soft-blue);border-color:#b9d0ff}
+    .card.mint{background:var(--soft-mint);border-color:#b9e3ce}
+    .card.amberbg{background:var(--soft-amber);border-color:#efcf90}
+    .card.redbg{background:var(--soft-red);border-color:#f1c1be}
+    .number{font:800 48px/1 var(--mono);letter-spacing:-.06em}
+    .label{font:700 14px/1.2 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+    .metric-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:auto}
+    .metric{padding:20px 18px;border-top:4px solid var(--blue);background:rgba(255,255,255,.07);border-radius:0 0 12px 12px}
+    .metric .value{font:800 39px/1 var(--mono);letter-spacing:-.05em;color:#fff}
+    .metric .name{font:700 13px/1.2 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:#9db1c7;margin-top:9px}
+    .footer{position:absolute;left:78px;right:78px;bottom:28px;display:flex;justify-content:space-between;align-items:center;font:600 13px/1 var(--mono);letter-spacing:.05em;color:#7a8796}
+    .dark .footer{color:#7890a9}
+    .footer .mark{color:var(--blue);font-weight:800}
+    .dark .footer .mark{color:#65c8ff}
+    ul.clean{list-style:none;margin:0;padding:0}
+    ul.clean li{position:relative;padding-left:28px;margin:0 0 15px;font-size:21px;line-height:1.4;color:var(--muted)}
+    .dark ul.clean li{color:#bed0e2}
+    ul.clean li::before{content:"";position:absolute;left:0;top:.55em;width:10px;height:10px;border-radius:50%;background:var(--blue)}
+    .dark ul.clean li::before{background:#65c8ff}
+    .quote{border-left:5px solid var(--blue);padding:10px 0 10px 24px;font-size:27px;line-height:1.36;color:var(--ink);font-weight:650}
+    .dark .quote{color:#eef7ff;border-color:#65c8ff}
+    .callout{padding:18px 22px;border-radius:14px;background:var(--navy);color:#fff;font-size:19px;line-height:1.4}
+    .callout strong{color:#65c8ff}
+    .dark .callout{background:rgba(0,0,0,.2);border:1px solid rgba(255,255,255,.11)}
+    .code{font:16px/1.52 var(--mono);white-space:pre-wrap;background:#0c1b2e;color:#d9e8f6;border-radius:15px;padding:20px 22px;margin:0;overflow:hidden}
+    .code .key{color:#76c9ff}.code .str{color:#90e2b6}.code .dim{color:#7890a9}
+    .eyebar{display:flex;gap:9px;flex-wrap:wrap}
+    .stage-no{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--blue);color:#fff;font:800 16px/1 var(--mono);margin-bottom:17px}
+    .comparison{width:100%;border-collapse:collapse;font-size:18px;background:#fff;border-radius:15px;overflow:hidden;border:1px solid var(--line)}
+    .comparison th,.comparison td{padding:13px 16px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+    .comparison th{font:700 13px/1.2 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:#eef1f5}
+    .comparison td.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+    .comparison tr:last-child td{border-bottom:0}
+    .comparison .winner td{font-weight:800;background:var(--soft-mint)}
+    .status{display:inline-block;padding:5px 9px;border-radius:999px;font:800 12px/1 var(--mono);text-transform:uppercase}
+    .ship{background:var(--soft-mint);color:#087547}.demo{background:var(--soft-amber);color:#9b5a00}.cut{background:var(--soft-red);color:#a92f2a}
+    .formula{font:600 26px/1.45 Georgia,"Times New Roman",serif;background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 24px;text-align:center}
+    .flow{display:flex;align-items:center;gap:10px}
+    .node{flex:1;min-height:94px;padding:15px 13px;border:1px solid var(--line);background:#fff;border-radius:14px;display:flex;flex-direction:column;justify-content:center;text-align:center}
+    .node b{font-size:18px}.node span{font:600 12px/1.35 var(--mono);color:var(--muted);margin-top:6px}
+    .arrow{font:700 28px/1 var(--mono);color:var(--blue)}
+    .branch{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .pipeline{display:grid;grid-template-columns:180px 1fr 1fr 1fr 200px;grid-template-rows:90px 24px 90px 24px 90px;gap:9px 14px;align-items:center}
+    .pipe-node{height:90px;border-radius:15px;border:1px solid rgba(255,255,255,.17);background:rgba(255,255,255,.07);padding:13px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+    .pipe-node b{font-size:17px}.pipe-node small{font:600 11px/1.3 var(--mono);color:#9fb5ca;margin-top:6px}
+    .pipe-node.ai{border-color:#4aa9ff;background:rgba(38,115,255,.15)}
+    .pipe-node.core{border-color:#55d09c;background:rgba(34,181,115,.12)}
+    .pipe-arrow{text-align:center;color:#67bfff;font:800 26px/1 var(--mono)}
+    .pipe-down{align-self:stretch;display:grid;place-items:center;color:#67bfff;font:800 25px/1 var(--mono)}
+    .arch-svg{display:block;width:100%;height:480px;margin:0;overflow:visible}
+    .arch-svg .edge{fill:none;stroke:#7f96ac;stroke-width:2.5;marker-end:url(#arch-arrow)}
+    .arch-svg .edge.optional{stroke:#65c8ff;stroke-dasharray:7 6}
+    .arch-svg .box rect{rx:14;ry:14;stroke-width:2}
+    .arch-svg .box text{fill:#f5f9fd;text-anchor:middle;font-family:var(--sans);font-size:16px;font-weight:750}
+    .arch-svg .box .sub{fill:#a9bed2;font-family:var(--mono);font-size:11px;font-weight:650}
+    .arch-svg .core rect{fill:#12392f;stroke:#55d09c}
+    .arch-svg .ai rect{fill:#102e53;stroke:#4aa9ff}
+    .arch-svg .neutral rect{fill:#17283b;stroke:#7f96ac}
+    .arch-svg .profile rect{fill:#45351f;stroke:#f4a62a}
+    .arch-svg .out rect{fill:#26314f;stroke:#a895ff}
+    .legend-dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px}
+    .timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin-top:10px}
+    .time-step{position:relative;padding:45px 22px 18px;border-top:4px solid var(--line)}
+    .time-step::before{content:"";position:absolute;left:22px;top:-11px;width:18px;height:18px;border:4px solid var(--paper);border-radius:50%;background:var(--blue)}
+    .time-step b{display:block;font-size:21px;margin-bottom:8px}.time-step span{font-size:17px;line-height:1.4;color:var(--muted)}
+    .rankbar{display:grid;grid-template-columns:130px 1fr 72px;gap:13px;align-items:center;margin:10px 0;font-size:16px}
+    .bar{height:22px;background:#e4e9ef;border-radius:20px;overflow:hidden}.bar i{display:block;height:100%;border-radius:20px;background:var(--blue)}
+    .checks{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+    .check{padding:15px 18px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:17px;display:flex;gap:12px;align-items:flex-start}
+    .check::before{content:"✓";color:var(--mint);font-weight:900}
+    .index-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+    .index-card{border:1px solid var(--line);background:#fff;border-radius:15px;padding:18px 19px;cursor:pointer;transition:.15s transform,.15s border-color}
+    .index-card:hover{transform:translateY(-3px);border-color:var(--blue)}
+    .index-card b{display:block;font-size:17px;margin-top:9px}.index-card span{font:800 13px/1 var(--mono);color:var(--blue)}
+    .notes{display:none}
+    .controls{position:fixed;left:50%;bottom:17px;transform:translateX(-50%);z-index:99;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:14px;background:rgba(8,20,38,.94);box-shadow:0 8px 28px rgba(0,0,0,.25);color:#fff}
+    .controls button{border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;border-radius:9px;padding:8px 15px;cursor:pointer;font-weight:750}
+    .controls button:hover{background:rgba(255,255,255,.16)}
+    .controls button:disabled{opacity:.3;cursor:default}
+    #counter{font:700 13px/1 var(--mono);min-width:74px;text-align:center;color:#bcd0e5}
+    #jump{width:230px;border:1px solid rgba(255,255,255,.18);background:#142941;color:#e9f3ff;border-radius:9px;padding:8px 10px}
+    @media(max-width:900px){.controls #jump{display:none}.deck{padding-left:6px;padding-right:6px}}
+    @media print{
+      @page{size:1600px 900px;margin:0}
+      html,body{background:#fff!important;width:auto;height:auto;overflow:visible!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      .deck{display:block;width:auto;height:auto;padding:0}
+      .slide,.slide.active{display:block!important;width:1600px;height:900px;transform:none!important;box-shadow:none;page-break-after:always;break-after:page}
+      .controls{display:none!important}
+    }
+  </style>
+</head>
+<body>
+<main class="deck" id="deck">
+
+  <section class="slide dark active" data-title="Opening">
+    <div class="inner">
+      <div class="kicker">TechJam 2026 · Track 4 · Conversational Shopping Copilot</div>
+      <h1>One target product.<br><span style="color:#65c8ff">50,000 possibilities.</span></h1>
+      <p class="lead">A stateful, intent-aware retrieval system that turns conversation into precise evidence—then proves every architectural choice with ablations.</p>
+      <div class="label" style="color:#65c8ff;margin-top:auto;margin-bottom:9px">MEASURED SCORE MODE · deterministic Agent</div>
+      <div class="metric-row" style="margin-top:0">
+        <div class="metric"><div class="value">0.970</div><div class="name">Hit Rate@10</div></div>
+        <div class="metric"><div class="value">0.665</div><div class="name">MRR</div></div>
+        <div class="metric"><div class="value">2.54</div><div class="name">Mean turns to hit</div></div>
+        <div class="metric"><div class="value">0.854</div><div class="name">TechnicalScore</div></div>
+        <div class="metric"><div class="value">8.0×</div><div class="name">Official baseline score</div></div>
+      </div>
+      <div class="footer"><span>Score Mode measured on 200 sessions · Deployment Mode is an implemented, opt-in demonstration</span><span class="mark">TECHJAM / 01</span></div>
+    </div>
+    <aside class="notes">Lead with the result. The 8.0× figure is 0.853670 divided by the published 0.106710 baseline TechnicalScore.</aside>
+  </section>
+
+  <section class="slide" data-title="Slide index">
+    <div class="inner">
+      <div class="topline">Deck map</div>
+      <h2>From language to ranked evidence</h2>
+      <div class="index-grid">
+        <div class="index-card" data-go="3"><span>01</span><b>Problem &amp; metric</b></div>
+        <div class="index-card" data-go="4"><span>02</span><b>System architecture</b></div>
+        <div class="index-card" data-go="5"><span>03</span><b>LLM extraction</b></div>
+        <div class="index-card" data-go="6"><span>04</span><b>Typed state &amp; overrides</b></div>
+        <div class="index-card" data-go="7"><span>05</span><b>Intent classifier</b></div>
+        <div class="index-card" data-go="8"><span>06</span><b>Sparse + dense retrieval</b></div>
+        <div class="index-card" data-go="9"><span>07</span><b>Fusion &amp; reranking</b></div>
+        <div class="index-card" data-go="10"><span>08</span><b>Shannon Entropy</b></div>
+        <div class="index-card" data-go="11"><span>09</span><b>Customer response</b></div>
+        <div class="index-card" data-go="12"><span>10</span><b>Live demo</b></div>
+      </div>
+      <div class="callout" style="margin-top:22px"><strong>Design principle:</strong> every learned component is bounded by typed state, validation, measurement, and a deterministic fallback.</div>
+      <div class="footer"><span>Click a section · use ← → to navigate · print to PDF for one slide per page</span><span class="mark">TECHJAM / 02</span></div>
+    </div>
+  </section>
+
+  <section class="slide" data-title="Problem and metric">
+    <div class="inner">
+      <div class="topline">01 · Problem framing</div>
+      <h2>This is retrieval under evolving intent—not a one-shot search box</h2>
+      <div class="grid2">
+        <div>
+          <div class="quote">The system must discover a hidden target through conversation, return it in the Top 10, and do so within ten turns.</div>
+          <div class="timeline">
+            <div class="time-step"><b>Browse</b><span>Vague category; maximize recall.</span></div>
+            <div class="time-step"><b>Clarify</b><span>Convert answers into constraints.</span></div>
+            <div class="time-step"><b>Correct</b><span>Retract stale preferences safely.</span></div>
+            <div class="time-step"><b>Rank</b><span>Optimize exact target position.</span></div>
+          </div>
+        </div>
+        <div class="card blue">
+          <h3>Objective function</h3>
+          <div class="formula">S = 0.50·HitRate@10 + 0.30·MRR + 0.20·Efficiency</div>
+          <div class="formula" style="margin-top:13px;font-size:22px">Efficiency = clip((11 − MTTC) / 10, 0, 1)</div>
+          <div class="rule"></div>
+          <ul class="clean">
+            <li><b>Recall:</b> did the target appear at all?</li>
+            <li><b>Rank:</b> how early in the Top 10?</li>
+            <li><b>Conversation:</b> how many turns did it take?</li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer"><span>Scenarios: Buying · Browsing · Intent Override · Boundary</span><span class="mark">TECHJAM / 03</span></div>
+    </div>
+  </section>
+
+  <section class="slide dark" data-title="Architecture">
+    <div class="inner">
+      <div class="topline">02 · Mermaid pipeline flowchart</div>
+      <h2 style="margin-bottom:16px">A deterministic control plane with bounded AI recovery paths</h2>
+      <div class="eyebar" style="margin-bottom:8px">
+        <span class="tag"><i class="legend-dot" style="background:#55d09c"></i>Measured Score Mode</span>
+        <span class="tag"><i class="legend-dot" style="background:#4aa9ff"></i>Optional Deployment Mode</span>
+        <span class="tag">Mermaid source: README.md</span>
+      </div>
+      <svg class="arch-svg" viewBox="0 0 1440 500" role="img" aria-labelledby="arch-title arch-desc">
+        <title id="arch-title">Conversational shopping retrieval pipeline</title>
+        <desc id="arch-desc">Customer language becomes typed state. Sparse BM25 is the measured path. Optional Qwen extraction and rewrite, MiniLM retrieval, intent routing, entropy questions, and a customer reply fail back to deterministic behavior.</desc>
+        <defs><marker id="arch-arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#7f96ac"/></marker></defs>
+
+        <path class="edge" d="M200 52 H260"/><path class="edge" d="M440 52 H500"/>
+        <path class="edge optional" d="M110 84 V147 H260"/><path class="edge optional" d="M440 147 H470 Q500 147 500 84"/>
+        <path class="edge" d="M690 52 C720 52 720 147 750 147"/><path class="edge optional" d="M595 84 C595 112 350 165 350 215"/>
+        <path class="edge optional" d="M200 247 H260"/><path class="edge optional" d="M440 247 H500"/>
+        <path class="edge" d="M930 147 C955 147 955 202 980 202"/><path class="edge optional" d="M840 179 V245"/>
+        <path class="edge optional" d="M690 277 H750"/><path class="edge optional" d="M690 52 H980"/><path class="edge optional" d="M1070 84 V110 Q1070 277 930 277"/><path class="edge optional" d="M930 277 C955 277 955 220 980 220"/>
+        <path class="edge" d="M1170 202 C1205 202 1205 122 1230 122"/>
+        <path class="edge optional" d="M1170 202 H1230"/>
+        <path class="edge optional" d="M500 52 H470 V392 H500"/>
+        <path class="edge" d="M1410 122 H1426 V362 H1410"/><path class="edge optional" d="M1320 254 V330"/><path class="edge optional" d="M690 392 H1210 Q1230 392 1230 362"/>
+
+        <g class="box neutral" transform="translate(20 20)"><rect width="180" height="64"/><text x="90" y="28">Customer turn<tspan class="sub" x="90" dy="19">message + history</tspan></text></g>
+        <g class="box core" transform="translate(260 20)"><rect width="180" height="64"/><text x="90" y="28">Rule parser<tspan class="sub" x="90" dy="19">templates + dialogue acts</tspan></text></g>
+        <g class="box core" transform="translate(500 20)"><rect width="190" height="64"/><text x="95" y="28">Typed state<tspan class="sub" x="95" dy="19">active · retracted · source</tspan></text></g>
+        <g class="box ai" transform="translate(260 115)"><rect width="180" height="64"/><text x="90" y="28">Qwen extraction<tspan class="sub" x="90" dy="19">unmatched free text only</tspan></text></g>
+        <g class="box ai" transform="translate(980 20)"><rect width="180" height="64"/><text x="90" y="28">Intent probabilities<tspan class="sub" x="90" dy="19">observable signals only</tspan></text></g>
+
+        <g class="box profile" transform="translate(20 215)"><rect width="180" height="64"/><text x="90" y="28">Preference tags<tspan class="sub" x="90" dy="19">weak profile hints</tspan></text></g>
+        <g class="box ai" transform="translate(260 215)"><rect width="180" height="64"/><text x="90" y="28">Qwen rewrite<tspan class="sub" x="90" dy="19">≤20 catalog keywords</tspan></text></g>
+        <g class="box core" transform="translate(750 115)"><rect width="180" height="64"/><text x="90" y="28">Weighted BM25<tspan class="sub" x="90" dy="19">SQLite FTS5 · Top 100</tspan></text></g>
+        <g class="box ai" transform="translate(500 245)"><rect width="190" height="64"/><text x="95" y="28">MiniLM dense<tspan class="sub" x="95" dy="19">local vectors · Top 100</tspan></text></g>
+        <g class="box ai" transform="translate(750 245)"><rect width="180" height="64"/><text x="90" y="28">Weighted RRF<tspan class="sub" x="90" dy="19">intent-conditioned fusion</tspan></text></g>
+        <g class="box core" transform="translate(980 170)"><rect width="190" height="64"/><text x="95" y="28">Constraint reranker<tspan class="sub" x="95" dy="19">exact · overlap · miss</tspan></text></g>
+        <g class="box core" transform="translate(1230 90)"><rect width="180" height="64"/><text x="90" y="28">Top 10 products<tspan class="sub" x="90" dy="19">ranked parent_asin</tspan></text></g>
+        <g class="box ai" transform="translate(1230 190)"><rect width="180" height="64"/><text x="90" y="28">Entropy question<tspan class="sub" x="90" dy="19">expected information gain</tspan></text></g>
+        <g class="box ai" transform="translate(500 360)"><rect width="190" height="64"/><text x="95" y="28">Qwen confirmation<tspan class="sub" x="95" dy="19">typed constraints only</tspan></text></g>
+        <g class="box out" transform="translate(1230 330)"><rect width="180" height="64"/><text x="90" y="28">Agent response<tspan class="sub" x="90" dy="19">products + words + question</tspan></text></g>
+      </svg>
+      <div class="callout" style="margin-top:-74px"><strong>Score owner:</strong> rule parser → typed state → weighted BM25 → constraint reranker → Top 10. Optional blue components reject invalid output or disappear when their assets are unavailable.</div>
+      <div class="footer"><span>Only the deterministic Score Mode owns the reported 0.853670 TechnicalScore</span><span class="mark">TECHJAM / 04</span></div>
+    </div>
+    <aside class="notes">Mermaid source is maintained in README.md. The slide uses an inline SVG rendering so it remains self-contained and pastes cleanly into PowerPoint.</aside>
+  </section>
+
+  <section class="slide" data-title="LLM extraction">
+    <div class="inner">
+      <div class="topline">03 · Robust language understanding</div>
+      <h2>Use an LLM where templates stop looking like real customers</h2>
+      <div class="grid2" style="grid-template-columns:.95fr 1.05fr">
+        <div>
+          <div class="card amberbg">
+            <div class="stage-no">A</div>
+            <h3>Fast path: deterministic parser</h3>
+            <p>Regex reads the benchmark’s fixed templates exactly and instantly. Refusals and override dialogue acts stay structural.</p>
+          </div>
+          <div style="text-align:center;font:800 20px/1 var(--mono);color:var(--blue);padding:13px">UNRECOGNIZED PHRASING ↓</div>
+          <div class="card blue">
+            <div class="stage-no">B</div>
+            <h3>Fall-through: Qwen2.5-1.5B-Instruct</h3>
+            <p>Extracts typed constraints from free text. One shared 1.5B local model also supports rewrite and response generation.</p>
+          </div>
+        </div>
+        <div>
+          <pre class="code"><span class="dim">INPUT</span>
+“A black hiking jacket with a warm lining.”
+
+<span class="dim">PROMPT CONTRACT</span>
+Return one JSON object. Attribute ∈ published enum.
+Value must use the customer’s own words. Never invent.
+
+<span class="dim">VALIDATED OUTPUT</span>
+{<span class="key">"constraints"</span>: [
+  {<span class="key">"attribute"</span>: <span class="str">"category"</span>, <span class="key">"value"</span>: <span class="str">"jacket"</span>},
+  {<span class="key">"attribute"</span>: <span class="str">"color"</span>,    <span class="key">"value"</span>: <span class="str">"black"</span>},
+  {<span class="key">"attribute"</span>: <span class="str">"use_case"</span>, <span class="key">"value"</span>: <span class="str">"hiking"</span>},
+  {<span class="key">"attribute"</span>: <span class="str">"feature"</span>,  <span class="key">"value"</span>: <span class="str">"warm lining"</span>}
+]}</pre>
+          <div class="checks" style="margin-top:15px">
+            <div class="check">JSON extraction and enum validation</div>
+            <div class="check">Content-word grounding to source message</div>
+            <div class="check">Greedy decoding for reproducibility</div>
+            <div class="check">Reject → parser constraints remain intact</div>
+          </div>
+        </div>
+      </div>
+      <div class="footer"><span>Rationale: perfect simulator templates ≠ robust natural-language deployment</span><span class="mark">TECHJAM / 05</span></div>
+    </div>
+  </section>
+
+  <section class="slide" data-title="Typed state and overrides">
+    <div class="inner">
+      <div class="topline">04 · Stateful safety boundary</div>
+      <h2>Every preference is a typed, auditable record—not loose chat text</h2>
+      <div class="grid2" style="grid-template-columns:1.12fr .88fr">
+        <div>
+          <pre class="code"><span class="dim">ConstraintRecord</span> {
+  <span class="key">attribute</span>: <span class="str">material</span>
+  <span class="key">value</span>:     <span class="str">leather</span>
+  <span class="key">source</span>:    <span class="str">initial_requirement</span>
+  <span class="key">turn</span>:      1
+  <span class="key">status</span>:    <span class="str">RETRACTED</span>
+  <span class="key">retracted_turn</span>: 3
+}
+
+<span class="dim">New active constraint</span> {
+  <span class="key">attribute</span>: <span class="str">material</span>
+  <span class="key">value</span>:     <span class="str">canvas</span>
+  <span class="key">source</span>:    <span class="str">override</span>
+  <span class="key">turn</span>:      3
+  <span class="key">status</span>:    <span class="str">ACTIVE</span>
+}</pre>
+        </div>
+        <div>
+          <div class="card redbg"><div class="label">Customer correction</div><h3 style="margin-top:9px">“Actually, not leather. What I need is canvas.”</h3></div>
+          <div class="flow" style="margin:18px 0">
+            <div class="node"><b>Match stale value</b><span>normalized value + attribute</span></div><div class="arrow">→</div>
+            <div class="node"><b>Retract only it</b><span>retain complete history</span></div><div class="arrow">→</div>
+            <div class="node"><b>Add replacement</b><span>source = override</span></div>
+          </div>
+          <ul class="clean">
+            <li><b>Surgical override:</b> no wholesale session reset.</li>
+            <li><b>Boundary-safe:</b> “no preference” means missing information, never a negative requirement.</li>
+            <li><b>Downstream contract:</b> only active constraints reach retrieval and replies.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer"><span>Schema: attribute · value · source · turn · status · retraction provenance</span><span class="mark">TECHJAM / 06</span></div>
+    </div>
+  </section>
+
+  <section class="slide" data-title="Intent classifier and router">
+    <div class="inner">
+      <div class="topline">05 · Observable intent routing</div>
+      <h2>Predict what is observable now—never pretend to know the future</h2>
+      <div class="grid2" style="grid-template-columns:.95fr 1.05fr">
+        <div class="card blue">
+          <div class="label">Lightweight classifier</div>
+          <div class="number" style="margin:14px 0 5px">1,640</div>
+          <p><b>parameters</b> · 34.6 KB NumPy artifact</p>
+          <div class="rule"></div>
+          <ul class="clean">
+            <li>Multinomial logistic regression</li>
+            <li>Hashed unigrams + bigrams</li>
+            <li>History and asked-attribute features</li>
+            <li>Returns probabilities + provisional flag</li>
+          </ul>
+        </div>
+        <div>
+          <div class="grid2" style="height:auto;display:grid;gap:14px">
+            <div class="card"><h3>Browsing</h3><p class="small">Vague or exploratory → preserve semantic recall.</p></div>
+            <div class="card"><h3>Buying</h3><p class="small">Concrete requirements → increase exact sparse weight.</p></div>
+            <div class="card"><h3>Intent Override</h3><p class="small">Observed correction → one semantic recovery turn, then decay.</p></div>
+            <div class="card"><h3>Boundary</h3><p class="small">Refusal/delegation → avoid repeating the attribute.</p></div>
+          </div>
+          <div class="callout" style="margin-top:15px"><strong>Critical finding:</strong> 100% on observable simulator-template labels, but 67.125% against hidden scenario labels. Future refusal or correction is unknowable before it occurs.</div>
+        </div>
+      </div>
+      <div class="footer"><span>Soft probability blend avoids unsafe hard route switches</span><span class="mark">TECHJAM / 07</span></div>
+    </div>
+  </section>
+
+  <section class="slide" data-title="Sparse and dense retrieval">
+    <div class="inner">
+      <div class="topline">06 · Dual retrieval</div>
+      <h2>Exact evidence protects precision; semantics provide a recovery path</h2>
+      <div class="grid2">
+        <div class="card amberbg">
+          <div class="stage-no" style="background:var(--amber)">S</div>
+          <h3>Weighted BM25 · SQLite FTS5</h3>
+          <p>Independent field weights reflect where evidence lives: title 6.0, categories 4.0, features/details 2.5, store 1.5, description 1.0.</p>
+          <div class="rankbar"><span>Exact catalog terms</span><div class="bar"><i style="width:97%"></i></div><b>primary</b></div>
+          <div class="callout"><strong>Measured:</strong> global BM25 puts the target in its Top 100 at least once in 199 / 200 public sessions.</div>
+        </div>
+        <div class="card blue">
+          <div class="stage-no">D</div>
+          <h3>Implemented experiment: LLM rewrite → all-MiniLM-L6-v2</h3>
+          <p>Active constraints are rewritten into ≤20 catalog keywords. Up to six anonymized <code>preference_tags</code> are weak hints and may never replace explicit intent.</p>
+          <pre class="code" style="font-size:14px;padding:15px"><span class="dim">requirements</span> = category: running shoes, size: wide
+<span class="dim">profile hints</span> = breathable
+<span class="dim">query</span> = <span class="str">running shoes wide breathable</span></pre>
+          <div class="grid3" style="margin-top:15px;gap:10px">
+            <div><div class="number" style="font-size:27px">22M</div><div class="label">parameters</div></div>
+            <div><div class="number" style="font-size:27px">384d</div><div class="label">vectors</div></div>
+            <div><div class="number" style="font-size:27px">~77MB</div><div class="label">nominal matrix</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="callout" style="margin-top:18px"><strong>Trade-off:</strong> MiniLM is an offline, no-per-query-fee deployment option, but the benchmark quotes catalog metadata verbatim—so semantic fusion can blur high-value exact matches. Local MiniLM has no committed full-agent score.</div>
+      <div class="footer"><span>Measured dense ablations elsewhere in this deck use the older OpenAI embedding route—not local MiniLM</span><span class="mark">TECHJAM / 08</span></div>
+    </div>
+  </section>
+
+  <section class="slide" data-title="Fusion and reranking">
+    <div class="inner">
+      <div class="topline">07 · Rank fusion &amp; evidence scoring</div>
+      <h2>Fuse ranks safely, then score constraints where they actually live</h2>
+      <div class="grid2" style="grid-template-columns:.9fr 1.1fr">
+        <div>
+          <div class="formula">RRF(d) = Σ<sub>r∈routes</sub> w<sub>r</sub> / (k + rank<sub>r</sub>(d))</div>
+          <div class="card blue" style="margin-top:16px">
+            <h3>Why reciprocal-rank fusion?</h3>
+            <ul class="clean">
+              <li>No score calibration between BM25 and cosine similarity.</li>
+              <li>Bounded contribution from any one route.</li>
+              <li>Weights are ablatable and intent-conditioned.</li>
+            </ul>
+          </div>
+          <div class="eyebar" style="margin-top:14px"><span class="chip">k = 60</span><span class="chip">candidate pool = 100</span><span class="chip">safe fixed mix = 85 / 15</span></div>
+        </div>
+        <div class="card">
+          <h3>Constraint-aware reranker</h3>
+          <p class="small">A constraint routes to attribute-relevant fields; exact phrases outrank loose token overlap while misses receive a penalty.</p>
+          <div class="grid3" style="margin:18px 0;gap:13px">
+            <div class="card mint" style="padding:18px"><div class="number" style="font-size:32px">+7.0</div><div class="label">exact phrase</div></div>
+            <div class="card blue" style="padding:18px"><div class="number" style="font-size:32px">+3.0</div><div class="label">token overlap</div></div>
+            <div class="card redbg" style="padding:18px"><div class="number" style="font-size:32px">−2.0</div><div class="label">hard miss</div></div>
+          </div>
+          <div class="flow">
+            <div class="node"><b>material</b><span>features · details</span></div><div class="arrow">→</div>
+            <div class="node"><b>brand</b><span>store · title</span></div><div class="arrow">→</div>
+            <div class="node"><b>category</b><span>categories · title</span></div>
+          </div>
+          <div class="callout" style="margin-top:17px"><strong>Measured contribution:</strong> typed state + reranking lifted TechnicalScore from 0.744744 to 0.853670.</div>
+        </div>
+      </div>
+      <div class="footer"><span>Reranking 100 candidates beat both smaller and larger tested pools</span><span class="mark">TECHJAM / 09</span></div>
+    </div>
+  </section>
+
+  <section class="slide" data-title="Shannon entropy questions">
+    <div class="inner">
+      <div class="topline">08 · Clarification as information theory</div>
+      <h2>Shannon Entropy: ask what removes the most uncertainty</h2>
+      <div class="grid2" style="grid-template-columns:1.08fr .92fr">
+        <div>
+          <div class="formula">H(C) = − Σ<sub>i</sub> p<sub>i</sub> log<sub>2</sub>(p<sub>i</sub>)</div>
+          <div class="formula" style="margin-top:12px">IG(a) = H(C) − Σ<sub>r</sub> P(r|a) H(C|r)</div>
+          <div class="formula" style="margin-top:12px;font-size:22px">value(a) = normalized_IG(a) · coverage(a)<sup>0.5</sup></div>
+          <div class="flow" style="margin-top:20px">
+            <div class="node"><b>Top-K scores</b><span>convert ranks to probabilities</span></div><div class="arrow">→</div>
+            <div class="node"><b>Partition</b><span>possible replies per attribute</span></div><div class="arrow">→</div>
+            <div class="node"><b>Mask</b><span>asked · refused · zero coverage</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="card mint">
+            <div class="label">Illustrative candidate pool</div>
+            <h3 style="margin-top:9px">Which answer most sharply divides plausible products?</h3>
+            <div class="rankbar"><span>material</span><div class="bar"><i style="width:86%;background:var(--mint)"></i></div><b>0.86</b></div>
+            <div class="rankbar"><span>color</span><div class="bar"><i style="width:54%;background:var(--cyan)"></i></div><b>0.54</b></div>
+            <div class="rankbar"><span>brand</span><div class="bar"><i style="width:24%;background:var(--amber)"></i></div><b>0.24</b></div>
+          </div>
+          <div class="callout" style="margin-top:16px"><strong>Measured honesty:</strong> direct information gain scored 0.842358 (0.845883 when repeats were allowed), versus 0.853670 for always-<code>other</code>. The simulator’s wildcard question can reveal two constraints, so entropy remains diagnostic/demo-only.</div>
+        </div>
+      </div>
+      <div class="footer"><span>In real dialogue semantics, answer coverage and expected information gain become the principled policy</span><span class="mark">TECHJAM / 10</span></div>
+    </div>
+  </section>
+
+  <section class="slide" data-title="Customer response and local model">
+    <div class="inner">
+      <div class="topline">09 · Customer experience layer</div>
+      <h2 style="margin-bottom:22px">Use the full dialogue to continue—or close—without giving the LLM control of products</h2>
+      <div class="grid2" style="grid-template-columns:1.12fr .88fr">
+        <div>
+          <div class="label" style="margin-bottom:9px">ACTUAL DIALOGUE-REPLY PROMPT TEMPLATE</div>
+          <pre class="code" style="font-size:12.5px;line-height:1.26;padding:14px 17px"><span class="dim">SYSTEM</span>
+You are the dialogue controller for a shopping assistant.
+Return one JSON object and nothing else.
+
+<span class="dim">INPUT</span>
+Conversation so far:
+USER: <span class="str">I need waterproof hiking boots.</span>
+ASSISTANT: <span class="str">Here are ten matches. What fit?</span>
+USER: <span class="str">Thank you, I am satisfied.</span>
+LATEST CUSTOMER MESSAGE: <span class="str">Thank you, I am satisfied.</span>
+
+Active customer requirements:
+- category: <span class="str">hiking boots</span>  ·  feature: <span class="str">waterproof</span>
+Showing: <span class="str">10 matching products</span>
+Application-controlled follow-up available: <span class="str">no</span>
+
+<span class="dim">TASK</span>
+{<span class="key">"action"</span>: <span class="str">"continue|finish"</span>, <span class="key">"reply"</span>: <span class="str">"..."</span>}
+
+<span class="dim">RULES</span>
+Choose action from the LATEST message. FINISH has priority
+when the customer is satisfied, done, or needs nothing else.
+For finish: close politely; do not restate requirements.
+For continue: acknowledge briefly; the app appends its question.
+One sentence · no question · no product IDs · under 25 words.</pre>
+          <div class="eyebar" style="margin-top:12px"><span class="chip">full transcript</span><span class="chip">greedy decoding</span><span class="chip">JSON validation</span><span class="chip">finish guard</span><span class="chip">reject ASIN</span></div>
+        </div>
+        <div class="card" style="border-top:6px solid var(--violet)">
+          <div class="label">Shared local model</div>
+          <h3 style="font-size:30px;margin:10px 0 14px">Qwen2.5-1.5B-Instruct</h3>
+          <div class="quote" style="font-size:23px">“Glad I could help—enjoy your selection!”</div>
+          <div class="grid2" style="height:auto;margin:16px 0;gap:10px">
+            <div class="card mint" style="padding:15px"><div class="number" style="font-size:30px">$0</div><div class="label">API fees</div></div>
+            <div class="card blue" style="padding:15px"><div class="number" style="font-size:30px">~3.1GB</div><div class="label">FP16 weights</div></div>
+            <div class="card" style="padding:15px"><div class="number" style="font-size:30px">12.9</div><div class="label">tokens/s · RTX 5060</div></div>
+            <div class="card amberbg" style="padding:15px"><div class="number" style="font-size:30px">3 jobs</div><div class="label">one shared model</div></div>
+          </div>
+          <p class="small"><b>Bounded authority:</b> the model sees the short transcript, typed state and result count—never product records. It writes one sentence; retrieval and ranking stay deterministic.</p>
+          <p class="small"><b>Reliable completion:</b> an explicit satisfaction cue forces <code>finish</code>, sets <code>ask_attribute = null</code>, and suppresses the entropy question.</p>
+          <p class="tiny">Apache-2.0 · ~1–2 s/turn for 10–25 completion tokens on an RTX 5060 Laptop · hardware-dependent</p>
+        </div>
+      </div>
+      <div class="footer"><span>Dialogue-aware UX without granting the generator control over retrieval, ranking or protocol fields</span><span class="mark">TECHJAM / 11</span></div>
+    </div>
+  </section>
+
+  <section class="slide dark" data-title="Live demo">
+    <div class="inner">
+      <div class="kicker">10 · Live walkthrough</div>
+      <h1 style="font-size:76px;margin:30px 0 12px">Time for a demo.</h1>
+      <p class="lead" style="margin-bottom:0">Watch customer language become typed state, retrieval evidence, ranked products, and the next useful question.</p>
+
+      <div class="callout" style="margin:22px 0 24px;padding:18px 24px;display:grid;grid-template-columns:190px 1fr 360px;align-items:center;gap:20px;flex:0">
+        <span class="label" style="color:#65c8ff">LAUNCH LOCALLY</span>
+        <span style="font:700 25px/1.2 var(--mono);color:#fff">.venv/bin/python -m ui.server --llm</span>
+        <span style="font:600 17px/1.2 var(--mono);color:#9fb5ca;text-align:right">http://127.0.0.1:8787/</span>
+      </div>
+
+      <div class="grid3" style="height:218px;flex:0;gap:22px">
+        <div class="card" style="padding:22px 24px"><div class="stage-no">1</div><h3>Start naturally</h3><p class="small">Enter a buying or browsing request and inspect the first Top 10.</p></div>
+        <div class="card" style="padding:22px 24px"><div class="stage-no">2</div><h3>Correct a preference</h3><p class="small">Show the old value retracting while the replacement becomes active.</p></div>
+        <div class="card" style="padding:22px 24px"><div class="stage-no">3</div><h3>Open engineering details</h3><p class="small">Trace constraints, query terms, routes, evidence chips, latency, and tokens.</p></div>
+      </div>
+      <div class="footer"><span>Customer view ↔ engineering view · same deterministic Agent contract</span><span class="mark">TECHJAM / 12</span></div>
+    </div>
+  </section>
+
+</main>
+
+<nav class="controls" aria-label="Slide navigation">
+  <button id="prev" type="button" aria-label="Previous slide">← Prev</button>
+  <select id="jump" aria-label="Jump to slide"></select>
+  <span id="counter" aria-live="polite">1 / 12</span>
+  <button id="next" type="button" aria-label="Next slide">Next →</button>
+</nav>
+
+<script>
+  (() => {
+    const slides = [...document.querySelectorAll('.slide')];
+    const prev = document.getElementById('prev');
+    const next = document.getElementById('next');
+    const jump = document.getElementById('jump');
+    const counter = document.getElementById('counter');
+    let index = Math.max(0, Math.min(slides.length - 1, Number(location.hash.slice(1)) - 1 || 0));
+
+    slides.forEach((slide, i) => {
+      const option = document.createElement('option');
+      option.value = i;
+      option.textContent = `${String(i + 1).padStart(2, '0')} — ${slide.dataset.title || 'Slide'}`;
+      jump.appendChild(option);
+    });
+
+    function fit() {
+      const roomW = window.innerWidth - 48;
+      const roomH = window.innerHeight - 102;
+      const scale = Math.min(roomW / 1600, roomH / 900, 1);
+      slides.forEach(slide => { slide.style.transform = `scale(${scale})`; });
+    }
+
+    function show(nextIndex, updateHash = true) {
+      index = Math.max(0, Math.min(slides.length - 1, nextIndex));
+      slides.forEach((slide, i) => slide.classList.toggle('active', i === index));
+      prev.disabled = index === 0;
+      next.disabled = index === slides.length - 1;
+      counter.textContent = `${index + 1} / ${slides.length}`;
+      jump.value = String(index);
+      document.title = `${String(index + 1).padStart(2, '0')} · ${slides[index].dataset.title} — TechJam 2026`;
+      if (updateHash) history.replaceState(null, '', `#${index + 1}`);
+      fit();
+    }
+
+    prev.addEventListener('click', () => show(index - 1));
+    next.addEventListener('click', () => show(index + 1));
+    jump.addEventListener('change', () => show(Number(jump.value)));
+    document.querySelectorAll('[data-go]').forEach(card => card.addEventListener('click', () => show(Number(card.dataset.go) - 1)));
+    document.addEventListener('keydown', event => {
+      if (['ArrowRight', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); show(index + 1); }
+      if (['ArrowLeft', 'PageUp'].includes(event.key)) { event.preventDefault(); show(index - 1); }
+      if (event.key === 'Home') show(0);
+      if (event.key === 'End') show(slides.length - 1);
+    });
+    window.addEventListener('resize', fit);
+    window.addEventListener('hashchange', () => show(Number(location.hash.slice(1)) - 1, false));
+    show(index, false);
+  })();
+</script>
+</body>
+</html>

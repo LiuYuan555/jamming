@@ -13,8 +13,9 @@ soft.  Swap the retrieval stack, flip the question policy, or wire in the intent
 router and this file keeps working unchanged.
 
 Usage:
-    python -m ui.server                      # auto-discovers the catalog
-    python -m ui.server --catalog PATH --port 8000
+    python -m ui.server                       # deterministic demo
+    python -m ui.server --llm                 # Qwen fall-through demo
+    python -m ui.server --catalog PATH --port 8787
 """
 
 from __future__ import annotations
@@ -36,8 +37,8 @@ TOKEN_RE = re.compile(r"[a-z0-9]+")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from starter.agent import Agent  # noqa: E402
+from starter.local_llm import DEFAULT_MODEL  # noqa: E402
 from ui import probe  # noqa: E402
-from ui.generate import DEFAULT_MODEL, ResponseGenerator  # noqa: E402
 
 
 HERE = Path(__file__).resolve().parent
@@ -50,6 +51,10 @@ REPO = HERE.parent
 # retract. Opening with "Buying" instead produces INITIAL_REQUIREMENT, which the
 # override deliberately leaves standing.
 PRESETS = [
+    {
+        "label": "LLM fall-through",
+        "text": "I need a lightweight waterproof blue jacket for rainy hikes.",
+    },
     {
         "label": "Buying",
         "text": "I'm looking for women's combat boots. A key requirement is: Rubber sole.",
@@ -230,7 +235,19 @@ class App:
         started = time.perf_counter()
         print(f"  catalog   {catalog_path}")
         print("  building FTS5 index and loading reranker catalog ...", flush=True)
-        self.agent = Agent(str(catalog_path))
+        if llm:
+            from starter.llm_agent import LLMAgent
+
+            print(f"  pipeline  loading {llm_model} for fall-through extraction/rewrite/reply ...",
+                  flush=True)
+            self.agent = LLMAgent(
+                str(catalog_path),
+                use_llm=True,
+                use_dense=dense,
+                llm_model=llm_model,
+            )
+        else:
+            self.agent = Agent(str(catalog_path))
         agent_ready = time.perf_counter()
         print(f"  agent     ready in {agent_ready - started:.1f}s", flush=True)
         print("  loading display index ...", flush=True)
@@ -242,22 +259,23 @@ class App:
         )
         self.sessions: dict[str, Session] = {}
 
-        # Optional, opt-in, and never on the scoring path -- the evaluator
-        # discards `message`, so this can only cost latency during scoring.
-        self.generator: ResponseGenerator | None = None
+        # One shared LocalLLM instance owns all three bounded jobs. This avoids
+        # the old demo bug where a separate cosmetic generator loaded a second
+        # copy of Qwen while extraction/rewrite remained disconnected.
+        local_llm = getattr(self.agent, "llm", None)
+        self.llm_pipeline = local_llm is not None
         if llm:
-            print(f"  loading {llm_model} ...", flush=True)
-            generator = ResponseGenerator(llm_model)
-            if generator.load():
-                self.generator = generator
-                print(f"  llm       ready on {generator.device}", flush=True)
+            if self.llm_pipeline:
+                print(f"  llm       ready on {local_llm.device}"
+                      " (extraction + rewrite + reply)", flush=True)
             else:
-                print(f"  llm       UNAVAILABLE -> {generator.error}", flush=True)
-                print("            falling back to template replies", flush=True)
+                reason = getattr(self.agent, "llm_unavailable_reason", "unknown")
+                print(f"  llm       UNAVAILABLE -> {reason}", flush=True)
+                print("            falling back to deterministic Agent", flush=True)
 
         # Shannon-entropy question selection, replacing the agent's fixed
         # `always_other`. Applied in this layer so the scored agent is
-        # untouched -- HISTORY.md measures entropy questions at 0.827465 vs
+        # untouched -- HISTORY.md measures entropy questions at 0.842358 vs
         # 0.853670, so it must not become the scoring default. It exists here
         # because asking a varied, motivated question is what a shopping
         # assistant should look like, and repeating "other" ten times is not.
@@ -282,7 +300,14 @@ class App:
         # API key, no network. Weights come from AgentConfig.hybrid_config
         # (0.85 sparse / 0.15 dense by default).
         self.dense = False
-        if dense:
+        if dense and llm:
+            self.dense = getattr(self.agent, "dense", None) is not None
+            if self.dense:
+                print("  dense     ready (profile-aware Qwen rewrite -> MiniLM)", flush=True)
+            else:
+                reason = getattr(self.agent, "dense_unavailable_reason", "unknown")
+                print(f"  dense     UNAVAILABLE -> {reason}", flush=True)
+        elif dense:
             print("  loading offline dense retriever (MiniLM) ...", flush=True)
             try:
                 from starter.hf_hybrid_retrieval import HFHybridRetriever
@@ -307,9 +332,16 @@ class App:
         )
         self.meta["catalog_size"] = len(self.display.items)
         self.meta["presets"] = PRESETS
+        active_llm_jobs = ["fall-through extraction", "customer reply"]
+        if self.dense:
+            active_llm_jobs.insert(1, "profile-aware query rewrite")
         self.meta["llm"] = (
-            {"model": llm_model, "device": self.generator.device}
-            if self.generator
+            {
+                "model": llm_model,
+                "device": local_llm.device,
+                "jobs": active_llm_jobs,
+            }
+            if self.llm_pipeline
             else None
         )
 
@@ -396,38 +428,50 @@ class App:
 
         message = reply.get("message")
         ask = reply.get("ask_attribute")
+        diagnostics = getattr(self.agent, "last_diagnostics", {})
+        if not isinstance(diagnostics, dict):
+            diagnostics = {}
         entropy_scores: list[dict] = []
-        if self.gate is not None:
+        if self.gate is not None and not diagnostics.get("conversation_complete"):
             override = self._ask_by_entropy(session_id, asins)
             if override:
-                message, ask, entropy_scores = override
+                question, ask, entropy_scores = override
+                confirmation = diagnostics.get("customer_confirmation")
+                message = f"{confirmation} {question}".strip() if confirmation else question
 
         usage = reply.get("usage") if isinstance(reply.get("usage"), dict) else {}
         prompt_tokens = usage.get("prompt_tokens", 0)
         completion_tokens = usage.get("completion_tokens", 0)
-        generated = False
+        generated = bool(diagnostics.get("generated_reply"))
+        generate_ms = float(diagnostics.get("llm_generate_ms") or 0.0)
 
-        generate_ms = 0.0
-        if self.generator is not None:
-            gen_started = time.perf_counter()
-            result = self.generator.generate(wants, cards, ask if isinstance(ask, str) else None)
-            generate_ms = (time.perf_counter() - gen_started) * 1000.0
-            if result:
-                # Model writes the confirmation; the agent's own template still
-                # supplies the question, so the prose and `ask_attribute` can
-                # never disagree.
-                question = message if isinstance(message, str) else ""
-                message = f"{result['reply']} {question}".strip()
-                generated = True
-                for card in cards:
-                    grounded = result["reasons"].get(card["parent_asin"])
-                    if grounded:
-                        card["reasons"] = [
-                            {"attribute": "stated", "value": value} for value in grounded
-                        ]
-                        card["explained"] = True
-            prompt_tokens += self.generator.last_usage["prompt_tokens"]
-            completion_tokens += self.generator.last_usage["completion_tokens"]
+        sections = probe.inspect(self.agent, session_id)
+        if self.llm_pipeline:
+            route = str(diagnostics.get("extraction_route") or "not_run")
+            sections.insert(
+                0,
+                {
+                    "id": "llm_fallthrough",
+                    "title": "LLM fall-through",
+                    "kind": "tree",
+                    "badge": route.replace("_", " "),
+                    "rows": {
+                        "extraction_route": route,
+                        "constraints_after_turn": diagnostics.get("constraints") or [],
+                        "profile_preference_tags": diagnostics.get("profile_tags") or [],
+                        "llm_calls_this_turn": diagnostics.get("llm_calls", 0),
+                        "llm_rejects_this_turn": diagnostics.get("llm_rejects", 0),
+                        "llm_extractions_total": diagnostics.get("llm_extractions", 0),
+                        "parser_fallbacks_total": diagnostics.get("llm_fallbacks", 0),
+                        "rewritten_query": diagnostics.get("rewritten_query") or "dense route off",
+                        "customer_reply_generated": generated,
+                        "dialogue_action": diagnostics.get("dialogue_action") or "not_run",
+                        "conversation_complete": bool(
+                            diagnostics.get("conversation_complete")
+                        ),
+                    },
+                },
+            )
 
         session.transcript.append({"role": "user", "text": text, "turn": session.turn})
         session.transcript.append(
@@ -451,10 +495,11 @@ class App:
             },
             "generated": generated,
             "entropy_scores": entropy_scores,
-            "latency_ms": round(elapsed_ms, 1),          # retrieval only
+            "latency_ms": round(max(0.0, elapsed_ms - generate_ms), 1),
             "generate_ms": round(generate_ms, 1),        # local LLM only
-            "total_ms": round(elapsed_ms + generate_ms, 1),
-            "sections": probe.inspect(self.agent, session_id),
+            "total_ms": round(elapsed_ms, 1),
+            "llm_diagnostics": diagnostics,
+            "sections": sections,
         }
 
 
@@ -541,8 +586,8 @@ def main() -> None:
     parser.add_argument(
         "--llm",
         action="store_true",
-        help="generate grounded replies with a local model (demo only; "
-        "the evaluator discards `message`, so this cannot affect the score)",
+        help="enable the local Qwen fall-through pipeline: extraction, "
+        "query rewrite when --dense is active, and grounded customer replies",
     )
     parser.add_argument("--llm-model", default=DEFAULT_MODEL)
     parser.add_argument(

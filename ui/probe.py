@@ -223,8 +223,17 @@ def components_section(agent: Any) -> dict | None:
 
     checks = {
         "constraint reranker": safe(lambda: agent.reranker is not None, False),
-        "hybrid dense route": safe(lambda: agent.hybrid_retriever is not None, False),
+        "hybrid dense route": safe(
+            lambda: agent.hybrid_retriever is not None or agent.dense is not None,
+            False,
+        ),
         "typed state": safe(lambda: agent.config.use_typed_state, False),
+        "local LLM loaded": safe(lambda: agent.llm is not None, False),
+        "LLM extraction": safe(lambda: agent.use_extract, False),
+        "LLM query rewrite (dense only)": safe(
+            lambda: agent.use_rewrite and agent.dense is not None, False
+        ),
+        "LLM customer reply": safe(lambda: agent.use_reply, False),
     }
     rows = [
         {"label": name, "on": bool(value)} for name, value in checks.items()
