@@ -614,3 +614,31 @@ class Agent:
                 "completion_tokens": completion_tokens,
             },
         }
+
+from starter.intent_hybrid_router import IntentConditionedHybridAgent
+
+class Agent(IntentConditionedHybridAgent):
+    def __init__(
+        self,
+        catalog_path="data/catalog.jsonl",
+        config=None,
+    ) -> None:
+        from starter.intent_classifier import IntentClassifier
+        from starter.agent import AgentConfig
+        from starter.hybrid_retrieval import HybridConfig
+        
+        try:
+            classifier = IntentClassifier.load("artifacts/techjam_intent_classifier.json")
+        except FileNotFoundError:
+            classifier = None
+            
+        super().__init__(
+            catalog_path=catalog_path,
+            config=AgentConfig(
+                question_policy="shannon_entropy", 
+                hybrid_config=HybridConfig(enabled=False)
+            ),
+            classifier=classifier,
+            use_entropy_gate=True,
+            use_intent_topk=True
+        )

@@ -1,5 +1,0 @@
-# Optional local deployment/demo stack. The scored Agent remains stdlib-only.
-torch>=2.2,<3
-transformers>=4.45,<6
-sentence-transformers>=3,<6
-numpy>=1.26,<3
